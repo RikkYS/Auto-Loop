@@ -1,0 +1,46 @@
+PASS 64-bit native INPUT structure
+PASS Settings and recording round trip
+PASS Reject invalid timing
+PASS Reject unmatched held key
+PASS Reject orphan release
+PASS Reject unknown action
+PASS Extended key flags
+PASS Mouse release flags
+PASS Virtual desktop coordinates
+PASS Engine repeats exactly and respects interval
+PASS Stop releases a held key
+PASS Focus loss releases and pauses; returning resumes
+PASS Automatic resume can be disabled
+PASS Time limit stops and releases
+PASS Input failure stops playback
+PASS Recording preserves unfinished held duration
+PASS Injected keyboard events are ignored by recorder
+PASS Keyboard hook records physical key pairs
+PASS Mouse hook preserves drag release position
+PASS Recorded double-click replays both button pairs
+PASS Playback minimizes only after validation; recording stays visible
+PASS App scope switch shows and hides picker without losing target
+PASS Option 2 keeps app scope inside the configuration panel
+PASS Key capture matches mouse field geometry
+PASS Action controls fit equally and status is below them
+PASS Test once ignores repeat and duration settings without changing them
+PASS Test once supports continuous setting and normal playback afterwards
+PASS Recording labels distinguish button press and release
+PASS Pause status explains focus loss and manual pause
+PASS Recording toolbar captions fit without ellipsis
+PASS Recorded control shortcut conflict is rejected
+PASS Plain letter does not conflict with modified shortcut
+PASS Click and Keys keep the same compact size
+PASS Every alphabet key is selectable
+PASS Record toolbar fits without clipped buttons
+PASS Nested modal scope preserves shortcut suppression
+PASS Loop Arrow logo is embedded
+PASS Stop after repeat count updates engine
+PASS Stop after duration updates engine
+PASS Until stopped clears both limits
+PASS Imported dual limits remain accurate and cannot become stale
+PASS All three tabs preserve window size
+PASS Approved control styling is installed
+PASS Typed numeric input reaches the engine value
+PASS Negative coordinates remain editable
+PASS Interval and Stop after share the reference input column

@@ -1,0 +1,12 @@
+# Local state, recordings, and build outputs
+settings.xml
+Routines/
+*.autoloop
+*.exe
+*.zip
+Backups/
+Verification/
+Releases/
+Designs/
+PROJECT-NOTES.md
+PublishAssets/

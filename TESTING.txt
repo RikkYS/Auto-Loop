@@ -1,0 +1,31 @@
+AUTO LOOP 0.6.0 — TEST SCOPE
+
+46 automated checks pass. See AUTOMATED-TEST-RESULTS.txt for individual checks.
+Coverage includes input structure and flags, held-input cleanup, exact repeat
+counts, recorded double-click event pairs, focus loss/resume, duration limits,
+input failures, routine validation, shortcut conflicts, control bounds, compact
+tab sizes, scope selector, Test once settings isolation, and pause/step labels.
+Recorder tests use controlled hook-event fixtures. They do not prove complete
+physical-device recording on every Windows computer.
+
+SUPPLIED ROUTINE
+My routine.autoloop completed 10 engine-simulated loops: 40 left-button presses,
+40 releases, no held buttons or keys remaining. This used an input capture sink;
+it did not replay the user's coordinates onto the desktop.
+
+LIVE TEST ATTEMPT
+A dedicated temporary sample-file receiver was created to test three real
+open/close cycles without affecting personal files. Windows rejected SendInput
+in this session, so no live clicks were delivered. This test is NOT a pass.
+The user's exact file-opening/closing sequence remains unverified on screen.
+
+VISUAL REVIEW
+Rendered Click, Keys, Record, expanded Selected app, and Settings views checked
+for spacing and clipping. Screenshots are renders of controls, not evidence of
+successful input delivery to other programs.
+
+RELEASE LIMITS
+No claims of compatibility with games, elevated apps, other Windows computers,
+or different display arrangements. Test once is intended to help users check a
+recording in their own environment before looping it.
+
