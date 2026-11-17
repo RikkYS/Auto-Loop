@@ -14,7 +14,20 @@ namespace AutoLoop {
         protected override void WndProc(ref Message m){if(m.Msg==0x21){m.Result=new IntPtr(3);return;}base.WndProc(ref m);}
         protected static int Px(float value){return UiScale.Px(value);}
         protected static Font UiFont(float points,FontStyle style){return new Font("Segoe UI",points*UiScale.Simulated,style);}
-        public Bitmap Render(){CreateControl();Bitmap bitmap=new Bitmap(Width,Height);DrawToBitmap(bitmap,new Rectangle(0,0,Width,Height));return bitmap;}
+        // Paints onto a transparent bitmap with smooth edges. (Capturing the window instead would show its square,
+        // unclipped corners, because the round window shape is only applied on screen.)
+        public Bitmap Render(){
+            CreateControl();Bitmap bitmap=new Bitmap(Width,Height,System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using(Graphics g=Graphics.FromImage(bitmap)){g.Clear(Color.Transparent);g.SmoothingMode=SmoothingMode.AntiAlias;g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;PaintOverlay(g,true);}
+            return bitmap;
+        }
+        protected abstract void PaintOverlay(Graphics g,bool image);
+        protected override void OnPaint(PaintEventArgs e){e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;PaintOverlay(e.Graphics,false);}
+        // ClearType text on screen; plain anti-aliased text on a transparent image, where ClearType leaves dark fringes.
+        protected static void DrawLabel(Graphics g,bool image,string text,Font font,Rectangle bounds,Color color,bool center){
+            if(image){using(StringFormat format=new StringFormat{Alignment=center?StringAlignment.Center:StringAlignment.Near,LineAlignment=StringAlignment.Center,Trimming=StringTrimming.EllipsisCharacter,FormatFlags=StringFormatFlags.NoWrap})using(Brush brush=new SolidBrush(color))g.DrawString(text,font,brush,bounds,format);}
+            else TextRenderer.DrawText(g,text,font,bounds,color,(center?TextFormatFlags.HorizontalCenter:TextFormatFlags.Left)|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);
+        }
     }
 
     // The pill at the top of the screen: what is happening, plus Pause and Stop. It can be dragged, and moves out of
@@ -45,14 +58,14 @@ namespace AutoLoop {
         void Place(){if(screen==null)screen=Screen.FromControl(this);Rectangle area=screen.WorkingArea;Location=new Point(area.Left+(area.Width-Width)/2,atBottom?area.Bottom-Height-Px(12):area.Top+Px(12));}
         // Moves to the other edge of the screen (top or bottom) so a click can reach the window underneath.
         public void MoveAway(){atBottom=!atBottom;Place();}
-        protected override void OnPaint(PaintEventArgs e){
-            Graphics g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;
+        protected override void PaintOverlay(Graphics g,bool image){
             UiDrawing.Face(g,new Rectangle(0,0,Width-1,Height-1),Background,Border,(Height-1)/2);
-            int size=Px(9);using(Brush b=new SolidBrush(dot))g.FillEllipse(b,Px(14),(Height-size)/2,size,size);
-            TextRenderer.DrawText(g,text,Font,new Rectangle(Px(14)+size+Px(10),0,Width,Height),Ink,TextFormatFlags.Left|TextFormatFlags.VerticalCenter);
-            DrawPill(g,leftRect,left,PillEdge);DrawPill(g,rightRect,right,rightEdge);
+            int size=Px(9),textLeft=Px(14)+size+Px(10);using(Brush b=new SolidBrush(dot))g.FillEllipse(b,Px(14),(Height-size)/2,size,size);
+            int textRight=leftRect.IsEmpty?(rightRect.IsEmpty?Width-Px(8):rightRect.Left):leftRect.Left;
+            DrawLabel(g,image,text,Font,new Rectangle(textLeft,0,Math.Max(0,textRight-textLeft),Height),Ink,false);
+            DrawPill(g,image,leftRect,left,PillEdge);DrawPill(g,image,rightRect,right,rightEdge);
         }
-        void DrawPill(Graphics g,Rectangle r,string caption,Color edge){if(r.IsEmpty)return;UiDrawing.Face(g,r,Pill,edge,Px(6));TextRenderer.DrawText(g,caption,Font,r,Ink,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);}
+        void DrawPill(Graphics g,bool image,Rectangle r,string caption,Color edge){if(r.IsEmpty)return;UiDrawing.Face(g,r,Pill,edge,Px(6));DrawLabel(g,image,caption,Font,r,Ink,true);}
         protected override void OnMouseDown(MouseEventArgs e){base.OnMouseDown(e);if(e.Button!=MouseButtons.Left||leftRect.Contains(e.Location)||rightRect.Contains(e.Location))return;Native.ReleaseCapture();Native.SendMessage(Handle,0xA1,new IntPtr(2),IntPtr.Zero);}
         protected override void OnMouseUp(MouseEventArgs e){base.OnMouseUp(e);if(e.Button!=MouseButtons.Left)return;if(leftRect.Contains(e.Location)&&LeftClicked!=null)LeftClicked(this,EventArgs.Empty);else if(rightRect.Contains(e.Location)&&RightClicked!=null)RightClicked(this,EventArgs.Empty);}
     }
@@ -68,12 +81,12 @@ namespace AutoLoop {
         public void SetText(string big,string small){if(big==this.big&&small==this.small)return;this.big=big;this.small=small;Invalidate();}
         public void ShowCentered(Point pointer){Rectangle area=Screen.FromPoint(pointer).WorkingArea;Location=new Point(area.Left+(area.Width-Width)/2,area.Top+(area.Height-Height)/2);if(!Visible)Show();}
         public void ShowAt(Point point){Location=new Point(point.X-Width/2,point.Y-Height/2);if(!Visible)Show();}
-        protected override void OnPaint(PaintEventArgs e){
-            Graphics g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;
+        protected override void PaintOverlay(Graphics g,bool image){
+            using(Brush fill=new SolidBrush(BackColor))g.FillEllipse(fill,0,0,Width-1,Height-1);
             if(dotStyle){using(Pen ring=new Pen(Color.FromArgb(15,110,86),Px(3)))g.DrawEllipse(ring,Px(2),Px(2),Width-Px(4)-1,Height-Px(4)-1);return;}
             using(Pen ring=new Pen(Color.FromArgb(57,73,89),2))g.DrawEllipse(ring,1,1,Width-3,Height-3);
-            using(Font number=UiFont(36,FontStyle.Regular))TextRenderer.DrawText(g,big,number,new Rectangle(0,Px(14),Width,Px(70)),Mint,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);
-            using(Font note=UiFont(8.5f,FontStyle.Regular))TextRenderer.DrawText(g,small,note,new Rectangle(Px(8),Px(84),Width-Px(16),Px(22)),Muted,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);
+            using(Font number=UiFont(36,FontStyle.Regular))DrawLabel(g,image,big,number,new Rectangle(0,Px(14),Width,Px(70)),Mint,true);
+            using(Font note=UiFont(8.5f,FontStyle.Regular))DrawLabel(g,image,small,note,new Rectangle(Px(8),Px(84),Width-Px(16),Px(22)),Muted,true);
         }
     }
 }
