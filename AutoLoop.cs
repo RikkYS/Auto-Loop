@@ -141,6 +141,8 @@ namespace AutoLoop {
         List<Step> recorded=new List<Step>(), playback=new List<Step>();
         readonly Dictionary<int,bool> heldKeys=new Dictionary<int,bool>(); readonly HashSet<int> heldMouse=new HashSet<int>();
         readonly HashSet<int> recordKeys=new HashSet<int>(), recordMouse=new HashSet<int>();
+        const int MaxRecordedSteps=100000;
+        bool stopHotkeyRegistered, recordingLimitReached;
         Preferences preferences=new Preferences(); System.Windows.Forms.Timer timer; Stopwatch wall=new Stopwatch();
         long lastWall, activeClock, due, recordedAt, lastMove=-100, completed, maxDuration; int index, repeatCount, actionKey=(int)Keys.F;
         bool pendingSingleRun; string focusPauseReason=""; bool running, recording, userPaused, focusPaused, wasEligible, busy, changingShortcuts, pendingPlay, pendingRecord;
@@ -157,8 +159,17 @@ namespace AutoLoop {
             dataRoot=AppDomain.CurrentDomain.BaseDirectory;
             BuildUi(); LoadPreferences(); RefreshWindows(); UpdateShortcuts();
             timer=new System.Windows.Forms.Timer{Interval=10}; timer.Tick+=delegate{TickEngine();};
-            Shown+=delegate { if(SelfTestMode)return;InstallHooks(); if(!RegisterBindings(preferences.Hotkeys)){int[] fallback={(int)(Keys.Control|Keys.Alt|Keys.F6),(int)(Keys.Control|Keys.Alt|Keys.F7),(int)(Keys.Control|Keys.Alt|Keys.F8),(int)(Keys.Control|Keys.Alt|Keys.F9)};if(RegisterBindings(fallback)){preferences.Hotkeys=fallback;UpdateShortcuts();SetStatus("Ready","Some function keys were in use. Shortcuts now use Ctrl + Alt; you can change them below.");}} timer.Start(); };
-            FormClosing+=delegate { timer.Stop(); StopAll("Stopped"); SavePreferences(); RemoveHooks(); for(int i=0;i<4;i++) Native.UnregisterHotKey(Handle,100+i); };
+            Shown+=delegate { if(SelfTestMode)return;InstallHooks(); if(!RegisterBindings(preferences.Hotkeys)){int[] fallback={(int)(Keys.Control|Keys.Alt|Keys.F6),(int)(Keys.Control|Keys.Alt|Keys.F7),(int)(Keys.Control|Keys.Alt|Keys.F8),(int)(Keys.Control|Keys.Alt|Keys.F9)};if(RegisterBindings(fallback)){preferences.Hotkeys=fallback;UpdateShortcuts();SetStatus("Ready","Some function keys were in use. Shortcuts now use Ctrl + Alt; you can change them below.");}else RegisterBindings(preferences.Hotkeys);} timer.Start(); };
+            FormClosing+=delegate(object sender,FormClosingEventArgs e) {
+                StopAll("Stopped");
+                if(e.CloseReason==CloseReason.UserClosing&&(heldKeys.Count>0||heldMouse.Count>0)){
+                    e.Cancel=true;
+                    Message("Some generated inputs could not be released. Press Stop to retry before closing Auto Loop.");
+                    return;
+                }
+                timer.Stop(); SavePreferences(); RemoveHooks();
+                for(int i=0;i<4;i++) Native.UnregisterHotKey(Handle,100+i);
+            };
         }
         Label LabelFor(string text) { return new Label{Text=text,AutoSize=true,ForeColor=muted,Margin=new Padding(0,8,14,4)}; }
         Button ButtonFor(string text, int width) { return new RoundedButton{Text=text,Width=width,Height=36,FlatStyle=FlatStyle.Flat,BackColor=card,ForeColor=ink,Margin=new Padding(0,3,8,3),UseVisualStyleBackColor=false}; }
@@ -259,6 +270,8 @@ namespace AutoLoop {
             CancelPositionCapture();
             if(rec&&(keyboardHook==IntPtr.Zero||mouseHook==IntPtr.Zero)){Message("Recording is unavailable because the input hooks could not be installed. Restart Auto Loop.");return;}
             if(!BindTarget())return;
+            if(!rec&&!stopHotkeyRegistered){Message("Set an available global Stop shortcut in Settings before starting playback.");return;}
+            if(!rec&&!ReleaseAll()){Message("Some generated inputs could not be released. Press Stop to retry before starting playback.");return;}
             if(!rec&&!ValidatePlayback())return;
             if(!rec)WindowState=FormWindowState.Minimized;
             pendingSingleRun=once;pendingRecord=rec;pendingPlay=!rec;SetEditingEnabled(false);countdownUntil=Stopwatch.GetTimestamp()+3L*Stopwatch.Frequency;
@@ -298,7 +311,7 @@ namespace AutoLoop {
         static Step Clone(Step s){return new Step{Kind=s.Kind,Code=s.Code,X=s.X,Y=s.Y,Delay=s.Delay,Extended=s.Extended};}
         void ToggleRecord() {if(recording){FinishRecording();return;}if(running||pendingPlay||pendingRecord)return;StartCountdown(true);}
         void BeginRecording() {
-            recorded.Clear();recordKeys.Clear();recordMouse.Clear();recordedAt=0;lastMove=-100;recording=true;userPaused=false;focusPaused=false;modes.SelectedIndex=2;ResetClock();UpdateEvents();
+            recordingLimitReached=false;recorded.Clear();recordKeys.Clear();recordMouse.Clear();recordedAt=0;lastMove=-100;recording=true;userPaused=false;focusPaused=false;modes.SelectedIndex=2;ResetClock();UpdateEvents();
             SetStatus("Recording","Capturing physical keys, clicks, scrolling and screen positions outside Auto Loop. Use Record again to finish.");
         }
         void FinishRecording() {
@@ -316,7 +329,7 @@ namespace AutoLoop {
         }
         void TogglePause() {
             if(!running&&!recording)return;
-            AdvanceClock();userPaused=!userPaused;focusPauseReason="";ReleaseAll();
+            AdvanceClock();userPaused=!userPaused;focusPauseReason="";if(!ReleaseAll()){StopAll("Stopped — input release failed");return;}
             if(recording)BalanceRecording();else {index=0;due=activeClock+playback[0].Delay;}
             if(!userPaused){focusPaused=false;wasEligible=false;}
             SetStatus(userPaused?"Paused":"Resuming",userPaused?"Press Pause again to resume, or Stop all to finish.":"The routine continues when the target app is active.");
@@ -324,9 +337,18 @@ namespace AutoLoop {
         void StopAll(string reason) {
             CancelPositionCapture();
             pendingPlay=false;pendingRecord=false;pendingSingleRun=false;focusPauseReason="";
-            if(recording)FinishRecording();running=false;recording=false;userPaused=false;focusPaused=false;wall.Stop();ReleaseAll();
+            if(recording)FinishRecording();running=false;recording=false;userPaused=false;focusPaused=false;wall.Stop();bool released=ReleaseAll();
             SetEditingEnabled(true);
-            SetStatus(reason,"All generated keys and mouse buttons have been released.");
+            SetStatus(reason,released?"All generated keys and mouse buttons have been released.":"Some generated inputs could not be released. Press Stop to retry.");
+        }
+        void PauseForFocusLoss() {
+            focusPauseReason=boundTarget==null?"Auto Loop is active":"selected app is not active";
+            focusPaused=true;
+            wasEligible=false;
+            if(!ReleaseAll()){StopAll("Stopped — input release failed");return;}
+            if(recording)BalanceRecording();
+            else {index=0;due=activeClock+playback[0].Delay;}
+            if(!autoResume.Checked)userPaused=true;
         }
         void TickEngine() {
             if(busy)return;busy=true;
@@ -337,22 +359,27 @@ namespace AutoLoop {
                     if(ShortcutHeld()){status.Text="Release the shortcut keys to continue";return;}
                     bool rec=pendingRecord,once=pendingSingleRun;pendingPlay=false;pendingRecord=false;pendingSingleRun=false;if(rec)BeginRecording();else BeginPlayback(once);
                 }
+                if(recording&&recordingLimitReached){
+                    FinishRecording();
+                    SetStatus("Recording limit reached",recorded.Count+" steps. Use Save routine to keep it.");
+                    return;
+                }
                 if(!running&&!recording)return;
                 if(boundTarget!=null&&(!Native.IsWindow(boundTarget.Handle)||Native.ProcessId(boundTarget.Handle)!=boundTarget.Process)){StopAll("Target app closed — stopped");return;}
                 AdvanceClock();bool focus=FocusEligible();
                 if(!focus||userPaused) {
-                    if(!focus&&!focusPaused){focusPauseReason=boundTarget==null?"Auto Loop is active":"selected app is not active";focusPaused=true;ReleaseAll();if(recording)BalanceRecording();else {index=0;due=activeClock+playback[0].Delay;}if(!autoResume.Checked)userPaused=true;}
-                    SetStatus(focusPauseReason.Length>0?"Paused: "+focusPauseReason:"Paused by you",userPaused?"Press "+KeyName(preferences.Hotkeys[2])+" to resume, or "+KeyName(preferences.Hotkeys[3])+" to stop.":"Return to the selected app to continue. Stop: "+KeyName(preferences.Hotkeys[3])+".");return;
+                    if(!focus&&!focusPaused){PauseForFocusLoss();if(!running&&!recording)return;}
+                    SetStatus(focusPauseReason.Length>0?"Paused: "+focusPauseReason:"Paused by you",userPaused?"Press "+KeyName(preferences.Hotkeys[2])+" to resume, or "+KeyName(preferences.Hotkeys[3])+" to stop.":(boundTarget==null?"Switch away from Auto Loop to continue. Stop: ":"Return to the selected app to continue. Stop: ")+KeyName(preferences.Hotkeys[3])+".");return;
                 }
                 if(focusPaused){if(ShortcutHeld())return;focusPaused=false;focusPauseReason="";}
                 if(recording){status.Text="Recording  ·  "+recorded.Count+" steps";return;}
                 if(maxDuration>0&&activeClock>=maxDuration){StopAll("Time limit reached");return;}
                 int budget=0;
                 while(running&&activeClock>=due&&budget++<100) {
-                    if(!FocusEligible()){ReleaseAll();break;}
+                    if(!FocusEligible()){PauseForFocusLoss();return;}
                     Execute(playback[index]);index++;
-                    if(index==playback.Count){ReleaseAll();completed++;if(repeatCount>0&&completed>=repeatCount){StopAll("Finished  ·  "+completed+" repeats");return;}index=0;due=Math.Max(activeClock,due)+playback[0].Delay;if(playback.All(s=>s.Delay==0))due+=10;continue;}
-                    due+=playback[index].Delay;
+                    if(index==playback.Count){if(!ReleaseAll()){StopAll("Stopped — input release failed");return;}completed++;if(repeatCount>0&&completed>=repeatCount){StopAll("Finished  ·  "+completed+" repeats");return;}index=0;due=Math.Max(activeClock,due)+playback[0].Delay;if(playback.All(s=>s.Delay==0))due+=10;continue;}
+                    due=Math.Max(due,activeClock)+playback[index].Delay;
                 }
                 status.Text="Running  ·  "+completed+(repeatCount>0?" / "+repeatCount:"")+" repeats";
             } catch(Exception e){StopAll("Stopped — input could not be sent");Message(e.Message);}finally{busy=false;}
@@ -366,10 +393,10 @@ namespace AutoLoop {
             else if(s.Kind=="Wheel"){Native.INPUT i=new Native.INPUT();i.u.mi.flags=0x800;i.u.mi.mouseData=unchecked((uint)s.Code);Send(i);}
         }
         void Send(Native.INPUT input){if(InputSink!=null)InputSink(input);else Native.Send(input);}
-        void ReleaseAll() {
-            foreach(var k in heldKeys.Reverse().ToArray()){try{Send(Native.Key(k.Key,true,k.Value));}catch{}}
-            foreach(int b in heldMouse.ToArray()){try{Send(Native.Mouse(b,true));}catch{}}
-            heldKeys.Clear();heldMouse.Clear();
+        bool ReleaseAll() {
+            foreach(var k in heldKeys.Reverse().ToArray()){try{Send(Native.Key(k.Key,true,k.Value));heldKeys.Remove(k.Key);}catch{}}
+            foreach(int b in heldMouse.ToArray()){try{Send(Native.Mouse(b,true));heldMouse.Remove(b);}catch{}}
+            return heldKeys.Count==0&&heldMouse.Count==0;
         }
         void InstallHooks() {
             keyboardProc=KeyboardHook;mouseProc=MouseHook;IntPtr module=Native.GetModuleHandle(null);
@@ -377,13 +404,18 @@ namespace AutoLoop {
             if(keyboardHook==IntPtr.Zero||mouseHook==IntPtr.Zero){RemoveHooks();Message("Recording hooks could not be installed. Restart Auto Loop before recording.");recordButton.Enabled=false;}
         }
         void RemoveHooks(){if(keyboardHook!=IntPtr.Zero)Native.UnhookWindowsHookEx(keyboardHook);if(mouseHook!=IntPtr.Zero)Native.UnhookWindowsHookEx(mouseHook);keyboardHook=mouseHook=IntPtr.Zero;}
-        bool CanRecord(){return recording&&!userPaused&&FocusEligible();}
+        bool CanRecord(){return recording&&!recordingLimitReached&&!userPaused&&FocusEligible();}
         static int BindingModifiers(int binding){return binding&(int)Keys.Modifiers;}
         static int PressedModifiers(HashSet<int> keys){int mods=0;if(keys.Contains(16)||keys.Contains(160)||keys.Contains(161))mods|=(int)Keys.Shift;if(keys.Contains(17)||keys.Contains(162)||keys.Contains(163))mods|=(int)Keys.Control;if(keys.Contains(18)||keys.Contains(164)||keys.Contains(165))mods|=(int)Keys.Alt;return mods;}
         bool IsControlStroke(int key){int mods=(int)Control.ModifierKeys;return preferences.Hotkeys.Any(b=>(b&0xFFFF)==key&&BindingModifiers(b)==mods);}
         void StripControlModifiers(int binding){int mods=BindingModifiers(binding);for(int i=recorded.Count-1;i>=0;i--){Step s=recorded[i];if(s.Kind!="KeyDown"||!IsModifier(s.Code))break;bool used=((s.Code==16||s.Code==160||s.Code==161)&&(mods&(int)Keys.Shift)!=0)||((s.Code==17||s.Code==162||s.Code==163)&&(mods&(int)Keys.Control)!=0)||((s.Code==18||s.Code==164||s.Code==165)&&(mods&(int)Keys.Alt)!=0);if(!used)break;recordKeys.Remove(s.Code);s.Kind="Wait";}}
+        bool ReserveRecordingSteps(int steps,int heldChange=0) {
+            // Leave space to balance held inputs or append the final wait.
+            if(recorded.Count+steps+Math.Max(1,recordKeys.Count+recordMouse.Count+heldChange)<=MaxRecordedSteps)return true;
+            recordingLimitReached=true;
+            return false;
+        }
         void CaptureStep(Step s) {
-            if(recorded.Count>=100000){BeginInvoke((Action)(()=>StopAll("Recording limit reached")));return;}
             AdvanceClock();s.Delay=(int)Math.Min(3600000,Math.Max(0,activeClock-recordedAt));recordedAt=activeClock;recorded.Add(s);
         }
         IntPtr KeyboardHook(int code,IntPtr message,IntPtr data) {
@@ -392,8 +424,8 @@ namespace AutoLoop {
                     Native.KBD k=(Native.KBD)Marshal.PtrToStructure(data,typeof(Native.KBD));int key=(int)k.vkCode;int msg=message.ToInt32();
                     if((k.flags&0x10)==0&&CanRecord()) {
                         bool down=msg==0x100||msg==0x104;bool up=msg==0x101||msg==0x105;
-                        if(down&&!IsControlStroke(key)){if(recordKeys.Add(key))CaptureStep(new Step{Kind="KeyDown",Code=key,Extended=(k.flags&1)!=0});}
-                        else if(up&&recordKeys.Remove(key))CaptureStep(new Step{Kind="KeyUp",Code=key,Extended=(k.flags&1)!=0});
+                        if(down&&!IsControlStroke(key)){if(!recordKeys.Contains(key)&&ReserveRecordingSteps(1,1)){recordKeys.Add(key);CaptureStep(new Step{Kind="KeyDown",Code=key,Extended=(k.flags&1)!=0});}}
+                        else if(up&&recordKeys.Contains(key)&&ReserveRecordingSteps(1,-1)){recordKeys.Remove(key);CaptureStep(new Step{Kind="KeyUp",Code=key,Extended=(k.flags&1)!=0});}
                     }
                 }
             }catch{ /* Never allow hook exceptions to escape into Windows. */ }
@@ -404,15 +436,15 @@ namespace AutoLoop {
                 if(code>=0&&CanRecord()) {
                     Native.MOUSE m=(Native.MOUSE)Marshal.PtrToStructure(data,typeof(Native.MOUSE));if((m.flags&1)!=0)return Native.CallNextHookEx(mouseHook,code,message,data);
                     int msg=message.ToInt32(),button=0;bool down=false,up=false;
-                    if(msg==0x200){AdvanceClock();if(activeClock-lastMove>=20){lastMove=activeClock;CaptureStep(new Step{Kind="Move",X=m.pt.X,Y=m.pt.Y});}}
-                    else if(msg==0x20A){CaptureStep(new Step{Kind="Move",X=m.pt.X,Y=m.pt.Y});CaptureStep(new Step{Kind="Wheel",Code=(short)(m.data>>16)});}
+                    if(msg==0x200){AdvanceClock();if(activeClock-lastMove>=20&&ReserveRecordingSteps(1)){lastMove=activeClock;CaptureStep(new Step{Kind="Move",X=m.pt.X,Y=m.pt.Y});}}
+                    else if(msg==0x20A&&ReserveRecordingSteps(2)){CaptureStep(new Step{Kind="Move",X=m.pt.X,Y=m.pt.Y});CaptureStep(new Step{Kind="Wheel",Code=(short)(m.data>>16)});}
                     else {
                         if(msg==0x201||msg==0x202){button=(int)MouseButtons.Left;down=msg==0x201;up=!down;}
                         if(msg==0x204||msg==0x205){button=(int)MouseButtons.Right;down=msg==0x204;up=!down;}
                         if(msg==0x207||msg==0x208){button=(int)MouseButtons.Middle;down=msg==0x207;up=!down;}
                         if(msg==0x20B||msg==0x20C){button=(m.data>>16)==1?(int)MouseButtons.XButton1:(int)MouseButtons.XButton2;down=msg==0x20B;up=!down;}
-                        if(down&&recordMouse.Add(button)){CaptureStep(new Step{Kind="Move",X=m.pt.X,Y=m.pt.Y});CaptureStep(new Step{Kind="MouseDown",Code=button});}
-                        if(up&&recordMouse.Remove(button)){CaptureStep(new Step{Kind="Move",X=m.pt.X,Y=m.pt.Y});CaptureStep(new Step{Kind="MouseUp",Code=button});}
+                        if(down&&!recordMouse.Contains(button)&&ReserveRecordingSteps(2,1)){recordMouse.Add(button);CaptureStep(new Step{Kind="Move",X=m.pt.X,Y=m.pt.Y});CaptureStep(new Step{Kind="MouseDown",Code=button});}
+                        if(up&&recordMouse.Contains(button)&&ReserveRecordingSteps(2,-1)){recordMouse.Remove(button);CaptureStep(new Step{Kind="Move",X=m.pt.X,Y=m.pt.Y});CaptureStep(new Step{Kind="MouseUp",Code=button});}
                     }
                 }
             }catch{ }
@@ -431,7 +463,8 @@ namespace AutoLoop {
         bool RegisterBindings(int[] bindings) {
             for(int i=0;i<4;i++)Native.UnregisterHotKey(Handle,100+i);
             bool success=true;
-            for(int i=0;i<4;i++){int b=bindings[i];uint mods=0x4000;if((b&(int)Keys.Control)!=0)mods|=2;if((b&(int)Keys.Alt)!=0)mods|=1;if((b&(int)Keys.Shift)!=0)mods|=4;if(!Native.RegisterHotKey(Handle,100+i,mods,(uint)(b&0xFFFF)))success=false;}
+            stopHotkeyRegistered=false;
+            for(int i=0;i<4;i++){int b=bindings[i];uint mods=0x4000;if((b&(int)Keys.Control)!=0)mods|=2;if((b&(int)Keys.Alt)!=0)mods|=1;if((b&(int)Keys.Shift)!=0)mods|=4;bool registered=Native.RegisterHotKey(Handle,100+i,mods,(uint)(b&0xFFFF));if(i==3)stopHotkeyRegistered=registered;if(!registered)success=false;}
             if(!success)SetStatus("A shortcut is unavailable","Choose different shortcuts below. The Stop all button remains available.");return success;
         }
         void ChangeShortcut(int which) {
@@ -442,7 +475,7 @@ namespace AutoLoop {
                 if(preferences.Hotkeys.Where((v,i)=>i!=which).Any(v=>(v&0xFFFF)==key)){Message("Each control needs a different main key, even when modifiers differ.");return;}
                 if(key==actionKey){Message("That key is the repeated action key. Choose another shortcut.");return;}
                 int[] next=(int[])preferences.Hotkeys.Clone();next[which]=binding;
-                if(!RegisterBindings(next)){RegisterBindings(preferences.Hotkeys);Message("Windows or another app is already using that shortcut. Your previous shortcuts have been restored.");return;}
+                if(!RegisterBindings(next)){RegisterBindings(preferences.Hotkeys);Message("Windows or another app is already using that shortcut. Check Settings for a working Stop shortcut before playback.");return;}
                 preferences.Hotkeys=next;UpdateShortcuts();SavePreferences();SetStatus("Shortcuts updated","Your shortcut settings are saved beside Auto Loop.");
             }}finally{changingShortcuts=previousShortcutState;}
         }
@@ -468,7 +501,7 @@ namespace AutoLoop {
             if(r==null||r.Version!=1||r.Mode<0||r.Mode>2||r.Interval<10||r.Interval>3600000||r.Hold<1||r.Hold>60000||r.Hold>r.Interval||r.Repeat<0||r.Repeat>1000000||r.LimitSeconds<0||r.LimitSeconds>86400||r.Key<8||r.Key>254||r.MouseButton<0||r.MouseButton>2||Math.Abs((long)r.FixedX)>100000||Math.Abs((long)r.FixedY)>100000)throw new InvalidDataException("Routine settings are invalid or unsupported.");ValidateSteps(r.Steps,false);
         }
         public static void ValidateSteps(List<Step> steps,bool requireBalanced) {
-            if(steps==null||steps.Count>100000)throw new InvalidDataException("Recording is missing or too large.");
+            if(steps==null||steps.Count>MaxRecordedSteps)throw new InvalidDataException("Recording is missing or too large.");
             HashSet<int> keys=new HashSet<int>(),buttons=new HashSet<int>();
             foreach(Step s in steps){if(s==null||s.Delay<0||s.Delay>3600000||Math.Abs((long)s.X)>100000||Math.Abs((long)s.Y)>100000)throw new InvalidDataException("A recorded step has invalid timing or position.");
                 if(s.Kind=="KeyDown"||s.Kind=="KeyUp"){if(s.Code<8||s.Code>254)throw new InvalidDataException("Invalid recorded key.");if(s.Kind=="KeyDown"){if(!keys.Add(s.Code))throw new InvalidDataException("Recording has duplicate key-down events.");}else if(!keys.Remove(s.Code)&&requireBalanced)throw new InvalidDataException("A key-up step has no matching key-down. Restore the pair or record again.");}
@@ -492,6 +525,37 @@ namespace AutoLoop {
             Action reset=delegate{StopAll("Test reset");sent.Clear();TestFocus=true;TestTime=0;boundTarget=null;lockTarget.Checked=false;preferences=new Preferences();modes.SelectedIndex=1;actionKey=70;interval.Value=100;hold.Value=30;repeats.Value=3;limit.Value=0;autoResume.Checked=true;};
             check("Engine repeats exactly and respects interval",()=>{reset();BeginPlayback();TickEngine();if(sent.Count!=1)throw new Exception("Missing initial down");TestTime=30;TickEngine();if(sent.Count!=2)throw new Exception("Missing release");TestTime=100;TickEngine();if(sent.Count!=3)throw new Exception("Repeat did not start at interval");TestTime=130;TickEngine();TestTime=200;TickEngine();TestTime=230;TickEngine();TestTime=300;TickEngine();if(running||sent.Count!=6||completed!=3)throw new Exception("Incorrect repeat total");});
             check("Stop releases a held key",()=>{reset();BeginPlayback();TickEngine();StopAll("Test stop");if(sent.Count!=2||sent[1].u.ki.flags!=2||heldKeys.Count!=0||running)throw new Exception("Key remained down");});
+            check("Playback cannot minimize without a global Stop shortcut",()=>{
+                reset();stopHotkeyRegistered=false;StartCountdown(false);
+                if(pendingPlay||WindowState==FormWindowState.Minimized||!LastMessage.Contains("global Stop"))throw new Exception("Unsafe playback accepted");
+            });
+            check("Failed key and mouse releases remain tracked until retry",()=>{
+                reset();
+                foreach(bool click in new[]{false,true}){
+                    modes.SelectedIndex=click?0:1;BeginPlayback();TickEngine();
+                    InputSink=delegate{throw new InvalidOperationException("Release blocked");};
+                    try{
+                        TestTime+=30;TickEngine();
+                        if(running||heldKeys.Count+heldMouse.Count!=1||!detail.Text.Contains("could not be released"))throw new Exception("Failed release was lost");
+                    }finally{InputSink=sent.Add;StopAll("Retry stop");}
+                    if(heldKeys.Count+heldMouse.Count!=0)throw new Exception("Stop did not retry the release");
+                }
+            });
+            check("Delayed tick preserves hold from actual press",()=>{
+                reset();BeginPlayback();TestTime=200;TickEngine();
+                TestTime=229;TickEngine();if(sent.Count!=1)throw new Exception("Hold was shortened");
+                TestTime=230;TickEngine();if(sent.Count!=2||sent[1].u.ki.flags!=2)throw new Exception("Release missing");
+            });
+            check("Recording reserves releases and rejects a partial mouse event at the limit",()=>{
+                reset();BeginRecording();
+                recorded.AddRange(Enumerable.Repeat(new Step{Kind="Move"},MaxRecordedSteps-2));
+                recordKeys.Add(70);CaptureStep(new Step{Kind="KeyDown",Code=70});
+                if(ReserveRecordingSteps(2,1)||CanRecord())throw new Exception("Incomplete mouse event accepted");
+                TestTime=30;TickEngine();ValidateSteps(recorded,true);
+                if(recording||recorded.Count!=MaxRecordedSteps||recorded.Last().Kind!="KeyUp")throw new Exception("Recording could not be balanced");
+                string path=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,Guid.NewGuid()+".autoloop");
+                try{WriteXml(path,CurrentRoutine());ValidateRoutine(ReadXml<Routine>(path));}finally{File.Delete(path);}
+            });
             check("Focus loss releases and pauses; returning resumes",()=>{reset();BeginPlayback();TickEngine();TestFocus=false;TestTime=10;TickEngine();if(sent.Count!=2||!focusPaused||heldKeys.Count!=0)throw new Exception("Focus loss failed");TestTime=500;TickEngine();if(sent.Count!=2)throw new Exception("Input leaked while unfocused");TestFocus=true;TestTime=600;TickEngine();if(sent.Count!=3||focusPaused)throw new Exception("Resume failed");});
             check("Automatic resume can be disabled",()=>{reset();autoResume.Checked=false;BeginPlayback();TickEngine();TestFocus=false;TestTime=10;TickEngine();TestFocus=true;TestTime=1000;TickEngine();if(!userPaused||sent.Count!=2)throw new Exception("Unexpected resume");});
             check("Time limit stops and releases",()=>{reset();repeats.Value=0;limit.Value=1;BeginPlayback();TickEngine();TestTime=1001;TickEngine();if(running||heldKeys.Count!=0||sent.Count!=2)throw new Exception("Time limit failed");});
@@ -500,8 +564,8 @@ namespace AutoLoop {
             check("Injected keyboard events are ignored by recorder",()=>{reset();BeginRecording();IntPtr p=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Native.KBD)));try{Marshal.StructureToPtr(new Native.KBD{vkCode=70,flags=0x10},p,false);KeyboardHook(0,new IntPtr(0x100),p);if(recorded.Count!=0)throw new Exception("Injected key recorded");}finally{Marshal.FreeHGlobal(p);}FinishRecording();});
             check("Keyboard hook records physical key pairs",()=>{reset();BeginRecording();IntPtr p=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Native.KBD)));try{Marshal.StructureToPtr(new Native.KBD{vkCode=70},p,false);KeyboardHook(0,new IntPtr(0x100),p);TestTime=75;KeyboardHook(0,new IntPtr(0x101),p);if(recorded.Count!=2||recorded[1].Delay!=75)throw new Exception("Physical event fixture failed");}finally{Marshal.FreeHGlobal(p);}FinishRecording();ValidateSteps(recorded,true);});
             check("Mouse hook preserves drag release position",()=>{reset();BeginRecording();IntPtr p=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Native.MOUSE)));try{Native.MOUSE m=new Native.MOUSE{pt=new Native.POINT{X=10,Y=20}};Marshal.StructureToPtr(m,p,false);MouseHook(0,new IntPtr(0x201),p);TestTime=5;m.pt.X=100;m.pt.Y=200;Marshal.StructureToPtr(m,p,false);MouseHook(0,new IntPtr(0x202),p);if(recorded.Count!=4||recorded[2].Kind!="Move"||recorded[2].X!=100||recorded[3].Kind!="MouseUp")throw new Exception("Endpoint lost");}finally{Marshal.FreeHGlobal(p);}FinishRecording();ValidateSteps(recorded,true);});
-            check("Recorded double-click replays both button pairs",()=>{reset();BeginRecording();IntPtr p=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Native.MOUSE)));try{Marshal.StructureToPtr(new Native.MOUSE{pt=new Native.POINT{X=100,Y=200}},p,false);MouseHook(0,new IntPtr(0x201),p);TestTime=40;MouseHook(0,new IntPtr(0x202),p);TestTime=120;MouseHook(0,new IntPtr(0x201),p);TestTime=160;MouseHook(0,new IntPtr(0x202),p);}finally{Marshal.FreeHGlobal(p);}FinishRecording();ValidateSteps(recorded,true);repeats.Value=1;BeginPlayback();TickEngine();foreach(long t in new long[]{40,120,160,200}){TestTime=t;TickEngine();}uint[] buttons=sent.Where(i=>i.type==0&&(i.u.mi.flags&6)!=0).Select(i=>i.u.mi.flags).ToArray();if(!buttons.SequenceEqual(new uint[]{2,4,2,4})||running)throw new Exception("Double-click button events lost");});
-            check("Playback minimizes only after validation; recording stays visible",()=>{reset();WindowState=FormWindowState.Normal;lockTarget.Checked=false;modes.SelectedIndex=1;StartCountdown(false);if(!pendingPlay||WindowState!=FormWindowState.Minimized)throw new Exception("Playback did not minimize");StopAll("Test stop");WindowState=FormWindowState.Normal;modes.SelectedIndex=2;recorded.Clear();StartCountdown(false);if(pendingPlay||WindowState!=FormWindowState.Normal)throw new Exception("Invalid playback minimized");reset();WindowState=FormWindowState.Normal;lockTarget.Checked=false;IntPtr oldKeyboard=keyboardHook,oldMouse=mouseHook;try{keyboardHook=mouseHook=new IntPtr(1);StartCountdown(true);if(!pendingRecord||WindowState!=FormWindowState.Normal)throw new Exception("Recording unexpectedly minimized");}finally{keyboardHook=oldKeyboard;mouseHook=oldMouse;StopAll("Test stop");}});
+            check("Recorded double-click replays both button pairs",()=>{reset();BeginRecording();IntPtr p=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Native.MOUSE)));try{Marshal.StructureToPtr(new Native.MOUSE{pt=new Native.POINT{X=100,Y=200}},p,false);MouseHook(0,new IntPtr(0x201),p);TestTime=40;MouseHook(0,new IntPtr(0x202),p);TestTime=120;MouseHook(0,new IntPtr(0x201),p);TestTime=160;MouseHook(0,new IntPtr(0x202),p);}finally{Marshal.FreeHGlobal(p);}FinishRecording();ValidateSteps(recorded,true);repeats.Value=1;TestTime=0;BeginPlayback();TickEngine();foreach(long t in new long[]{40,120,160,200}){TestTime=t;TickEngine();}uint[] buttons=sent.Where(i=>i.type==0&&(i.u.mi.flags&6)!=0).Select(i=>i.u.mi.flags).ToArray();if(!buttons.SequenceEqual(new uint[]{2,4,2,4})||running)throw new Exception("Double-click button events lost: "+string.Join(",",buttons)+"; running="+running+"; due="+due+"; steps="+string.Join(",",recorded.Select(x=>x.Kind+":"+x.Delay)));});
+            check("Playback minimizes only after validation; recording stays visible",()=>{reset();stopHotkeyRegistered=true;WindowState=FormWindowState.Normal;lockTarget.Checked=false;modes.SelectedIndex=1;StartCountdown(false);if(!pendingPlay||WindowState!=FormWindowState.Minimized)throw new Exception("Playback did not minimize");StopAll("Test stop");WindowState=FormWindowState.Normal;modes.SelectedIndex=2;recorded.Clear();StartCountdown(false);if(pendingPlay||WindowState!=FormWindowState.Normal)throw new Exception("Invalid playback minimized");reset();WindowState=FormWindowState.Normal;lockTarget.Checked=false;IntPtr oldKeyboard=keyboardHook,oldMouse=mouseHook;try{keyboardHook=mouseHook=new IntPtr(1);StartCountdown(true);if(!pendingRecord||WindowState!=FormWindowState.Normal)throw new Exception("Recording unexpectedly minimized");}finally{keyboardHook=oldKeyboard;mouseHook=oldMouse;StopAll("Test stop");}});
             check("App scope switch shows and hides picker without losing target",()=>{reset();lockTarget.Checked=true;PerformLayout();if(ClientSize!=new Size(400,587)||!targets.Parent.Visible&&Visible)throw new Exception("Selected app controls missing");lockTarget.Checked=false;PerformLayout();if(ClientSize!=new Size(400,512)||targets.Parent.Visible)throw new Exception("Any app did not collapse picker");if(!BindTarget()||boundTarget!=null)throw new Exception("Any app requires a target");});
             check("Option 2 keeps app scope inside the configuration panel",()=>{reset();if(targets.Parent.Parent.Parent!=optionGrid.Parent)throw new Exception("App selector is outside the main panel");});
             check("Key capture matches mouse field geometry",()=>{reset();if(keyCapture.Bounds!=mouse.Bounds||keyCapture.Font.Size!=mouse.Font.Size||keyCapture.TextAlign!=ContentAlignment.MiddleLeft)throw new Exception("Key field differs from mouse field");});
@@ -559,39 +623,3 @@ namespace AutoLoop {
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
