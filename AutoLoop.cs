@@ -12,8 +12,8 @@ using System.Xml.Serialization;
 
 [assembly: System.Reflection.AssemblyTitle("Auto Loop")]
 [assembly: System.Reflection.AssemblyProduct("Auto Loop")]
-[assembly: System.Reflection.AssemblyVersion("0.6.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.6.1.0")]
+[assembly: System.Reflection.AssemblyVersion("0.7.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("0.7.0.0")]
 namespace AutoLoop {
     public class Step {
         public string Kind = "Wait";
@@ -37,6 +37,8 @@ namespace AutoLoop {
     }
     public class Preferences {
         public int[] Hotkeys = { (int)Keys.F6, (int)Keys.F7, (int)Keys.F8, (int)Keys.F9 };
+        // The settings in use when Auto Loop last closed (no recorded steps), restored on the next start.
+        public Routine Last;
     }
     internal static class Native {
         [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
@@ -143,7 +145,7 @@ namespace AutoLoop {
         public bool BorderVisible=true;
         public DarkComboBox(){SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);}
         protected override void OnSelectedIndexChanged(EventArgs e){base.OnSelectedIndexChanged(e);Invalidate();}
-        protected override void OnPaint(PaintEventArgs e){using(Brush background=new SolidBrush(Parent==null?BackColor:Parent.BackColor))e.Graphics.FillRectangle(background,ClientRectangle);UiDrawing.Face(e.Graphics,new Rectangle(0,0,Width-1,Height-1),BackColor,BorderVisible?Color.FromArgb(50,67,84):Color.Empty,6);string caption=SelectedIndex<0?"Choose app":GetItemText(SelectedItem);TextRenderer.DrawText(e.Graphics,caption,Font,new Rectangle(UiScale.Px(9),0,Math.Max(0,Width-UiScale.Px(35)),Height),Enabled?ForeColor:Color.FromArgb(120,135,150),TextFormatFlags.Left|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;float u=UiScale.Layout;e.Graphics.TranslateTransform(Width-UiScale.Px(13),Height/2);e.Graphics.ScaleTransform(u,u);using(Pen pen=new Pen(Enabled?Color.FromArgb(187,202,217):Color.FromArgb(95,105,118),1.5f)){e.Graphics.DrawLines(pen,new Point[]{new Point(-4,-2),new Point(0,2),new Point(4,-2)});}e.Graphics.ResetTransform();}
+        protected override void OnPaint(PaintEventArgs e){using(Brush background=new SolidBrush(Parent==null?BackColor:Parent.BackColor))e.Graphics.FillRectangle(background,ClientRectangle);UiDrawing.Face(e.Graphics,new Rectangle(0,0,Width-1,Height-1),BackColor,BorderVisible?Color.FromArgb(50,67,84):Color.Empty,6);string caption=SelectedIndex<0?"Choose from list":GetItemText(SelectedItem);TextRenderer.DrawText(e.Graphics,caption,Font,new Rectangle(UiScale.Px(9),0,Math.Max(0,Width-UiScale.Px(35)),Height),Enabled?ForeColor:Color.FromArgb(120,135,150),TextFormatFlags.Left|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;float u=UiScale.Layout;e.Graphics.TranslateTransform(Width-UiScale.Px(13),Height/2);e.Graphics.ScaleTransform(u,u);using(Pen pen=new Pen(Enabled?Color.FromArgb(187,202,217):Color.FromArgb(95,105,118),1.5f)){e.Graphics.DrawLines(pen,new Point[]{new Point(-4,-2),new Point(0,2),new Point(4,-2)});}e.Graphics.ResetTransform();}
     }
     internal class ActionButton : Button {
         public string Symbol=""; public Color SymbolColor=Color.Empty;
@@ -188,7 +190,7 @@ namespace AutoLoop {
             Text="Auto Loop"; StartPosition=FormStartPosition.CenterScreen;
             Font=new Font("Segoe UI",16); BackColor=bg; ForeColor=ink; AutoScaleMode=AutoScaleMode.None;
             dataRoot=AppDomain.CurrentDomain.BaseDirectory;
-            BuildUi(); LoadPreferences(); RefreshWindows(); UpdateShortcuts();
+            BuildUi(); LoadPreferences(); RefreshWindows(); UpdateShortcuts(); RestoreLastSettings(); WireHints();
             timer=new System.Windows.Forms.Timer{Interval=10}; timer.Tick+=delegate{TickEngine();};
             Shown+=delegate { if(SelfTestMode)return;InstallHooks(); if(!RegisterBindings(preferences.Hotkeys)){int[] fallback={(int)(Keys.Control|Keys.Alt|Keys.F6),(int)(Keys.Control|Keys.Alt|Keys.F7),(int)(Keys.Control|Keys.Alt|Keys.F8),(int)(Keys.Control|Keys.Alt|Keys.F9)};if(RegisterBindings(fallback)){preferences.Hotkeys=fallback;UpdateShortcuts();SetStatus("Ready","Some function keys were in use. Shortcuts now use Ctrl + Alt; you can change them below.");}else RegisterBindings(preferences.Hotkeys);} timer.Start(); };
             FormClosing+=delegate(object sender,FormClosingEventArgs e) {
@@ -198,7 +200,7 @@ namespace AutoLoop {
                     Message("Some generated inputs could not be released. Press Stop to retry before closing Auto Loop.");
                     return;
                 }
-                timer.Stop(); SavePreferences(); RemoveHooks();
+                timer.Stop(); HideChrome(); SavePreferences(); RemoveHooks();
                 for(int i=0;i<4;i++) Native.UnregisterHotKey(Handle,100+i);
             };
         }
@@ -207,10 +209,10 @@ namespace AutoLoop {
         NumberBox Number(int min,int max,int value,int width) { return new NumberBox{Minimum=min,Maximum=max,Value=value,Width=width,BackColor=field,ForeColor=ink,BorderStyle=BorderStyle.FixedSingle,Margin=new Padding(0,5,12,5)}; }
         FlowLayoutPanel Row() { return new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=true,WrapContents=true,Margin=new Padding(0,3,0,3)}; }
         bool compactScaled; Button[] modeTabs=new Button[3]; TableLayoutPanel compactRoot, optionGrid, recordingTools; Panel recordingHost; Form settingsWindow;
-        ToolTip tips=new ToolTip(); System.Windows.Forms.Timer positionCaptureTimer;
+        ToolTip tips=new ToolTip(); Label intervalHint; Button pickApp;
         ComboBox StyledCombo(int width) {
             ComboBox box=new DarkComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Width=width,Height=54,BackColor=field,ForeColor=ink,FlatStyle=FlatStyle.Flat,DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=46};
-            box.DrawItem+=delegate(object sender,DrawItemEventArgs e){e.DrawBackground();string text=e.Index<0?"Choose app":box.Items[e.Index].ToString();using(Brush brush=new SolidBrush(e.Index<0?muted:ink))e.Graphics.DrawString(text,box.Font,brush,e.Bounds.X+7,e.Bounds.Y+3);e.DrawFocusRectangle();};return box;
+            box.DrawItem+=delegate(object sender,DrawItemEventArgs e){e.DrawBackground();string text=e.Index<0?"Choose from list":box.Items[e.Index].ToString();using(Brush brush=new SolidBrush(e.Index<0?muted:ink))e.Graphics.DrawString(text,box.Font,brush,e.Bounds.X+7,e.Bounds.Y+3);e.DrawFocusRectangle();};return box;
         }
         Label FieldLabel(string text){return new Label{Text=text,AutoSize=false,Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,ForeColor=ink,Margin=new Padding(0)};}
         void SelectActionKey(int code){if(keyCapture!=null)keyCapture.Text=KeyName(code);for(int i=0;i<keyChoices.Items.Count;i++){if(((KeyChoice)keyChoices.Items[i]).Code==code){keyChoices.SelectedIndex=i;return;}}keyChoices.Items.Add(new KeyChoice{Code=code});keyChoices.SelectedIndex=keyChoices.Items.Count-1;}
@@ -221,7 +223,7 @@ namespace AutoLoop {
         void UpdateStopLayout(){TableLayoutPanel layout=stopValue.Parent as TableLayoutPanel;if(layout!=null&&layout.ColumnStyles.Count>0)layout.ColumnStyles[0].Width=stopRule.SelectedIndex<2?65*UiScale.Layout:0;}
         // 0.74 is the compact design scale; Layout adds the display (DPI) scale on top.
         float CompactFactor{get{return compactScaled?0.74f*UiScale.Layout:1f;}}
-        void SetEditingEnabled(bool enabled){foreach(Control control in new Control[]{mouse,keyCapture,interval,stopRule,stopValue,lockTarget,autoResume})control.Enabled=enabled;targets.Enabled=enabled&&lockTarget.Checked;foreach(Button tab in modeTabs)tab.Enabled=enabled;}
+        void SetEditingEnabled(bool enabled){foreach(Control control in new Control[]{mouse,keyCapture,interval,stopRule,stopValue,lockTarget,autoResume})control.Enabled=enabled;targets.Enabled=pickApp.Enabled=enabled&&lockTarget.Checked;foreach(Button tab in modeTabs)tab.Enabled=enabled;}
         void BuildUi() {
             MinimumSize=Size.Empty;MaximumSize=Size.Empty;FormBorderStyle=FormBorderStyle.None;MaximizeBox=false;ClientSize=new Size(540,692);
             try{Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);}catch{}
@@ -235,6 +237,7 @@ namespace AutoLoop {
             mouse=StyledCombo(380);mouse.Items.AddRange(new object[]{"Left click","Right click","Middle click"});mouse.SelectedIndex=0;mouse.Location=new Point(174,17);mouse.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;mouse.Width=306;normalHost.Controls.Add(mouse);
             keyChoices=StyledCombo(380);keyChoices.Location=mouse.Location;keyChoices.Size=mouse.Size;keyChoices.Anchor=mouse.Anchor;keyChoices.Visible=false;List<int> choiceCodes=new List<int>();for(int key=65;key<=90;key++)choiceCodes.Add(key);for(int key=48;key<=57;key++)choiceCodes.Add(key);for(int key=112;key<=135;key++)choiceCodes.Add(key);for(int key=96;key<=105;key++)choiceCodes.Add(key);choiceCodes.AddRange(new int[]{32,13,9,8,27,37,38,39,40,45,46,36,35,33,34,106,107,109,110,111});foreach(int code in choiceCodes)keyChoices.Items.Add(new KeyChoice{Code=code});SelectActionKey(actionKey);keyChoices.SelectedIndexChanged+=delegate{if(keyChoices.SelectedItem is KeyChoice)actionKey=((KeyChoice)keyChoices.SelectedItem).Code;};keyCapture=new RoundedButton{Text=KeyName(actionKey),BackColor=field,ForeColor=ink,Location=keyChoices.Location,Size=keyChoices.Size,Anchor=keyChoices.Anchor,Visible=false,TextAlign=ContentAlignment.MiddleLeft,AccessibleName="Choose repeated key"};tips.SetToolTip(keyCapture,"Click here, then press the key you want to repeat.");keyCapture.Click+=delegate{if(IsBusy())return;using(ModalScope scope=new ModalScope(this))using(ShortcutDialog dialog=new ShortcutDialog("Choose repeated key",actionKey)){if(dialog.ShowDialog(ModalOwner)==DialogResult.OK){if((dialog.Binding&(int)Keys.Modifiers)!=0){Message("Choose a single key. Use Record for combinations.");return;}actionKey=dialog.Binding;SelectActionKey(actionKey);keyCapture.Text=KeyName(actionKey);}}};normalHost.Controls.Add(keyCapture);
             normalHost.Controls.Add(new Label{Text="Interval",AutoSize=true,ForeColor=ink,Location=new Point(0,112)});interval=Number(10,3600000,100,210);interval.Font=new Font("Segoe UI",16);interval.Location=new Point(174,101);interval.Width=210;interval.Height=54;normalHost.Controls.Add(interval);normalHost.Controls.Add(new Label{Text="ms",AutoSize=true,ForeColor=muted,Location=new Point(400,112)});tips.SetToolTip(interval,"100 ms = one press every tenth of a second.");
+            intervalHint=new Label{AutoSize=false,AutoEllipsis=true,Location=new Point(176,160),Size=new Size(304,32),ForeColor=accent,Font=new Font("Segoe UI",12),Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right};normalHost.Controls.Add(intervalHint);
             recordingHost=new Panel{Dock=DockStyle.Fill,Visible=false,Margin=new Padding(0)};recordCount=new Label{Text="Recorded routine · 0 steps",Dock=DockStyle.Top,Height=0,ForeColor=ink,Font=new Font("Segoe UI",10)};events=new ListBox{Dock=DockStyle.Fill,BackColor=field,ForeColor=ink,BorderStyle=BorderStyle.None,IntegralHeight=false,Font=new Font("Segoe UI",14),DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=45};events.DrawItem+=DrawRecordedStep;
             recordingTools=new TableLayoutPanel{Dock=DockStyle.Bottom,Height=54,ColumnCount=4,RowCount=1,Padding=new Padding(0,6,0,2)};recordingTools.RowStyles.Add(new RowStyle(SizeType.Percent,100));for(int i=0;i<4;i++)recordingTools.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,i==0?32f:22.666f));Button delay=ButtonFor("Delay",75);delay.Click+=delegate{EditDelay();};Button remove=ButtonFor("Remove",75);remove.Click+=delegate{if(IsBusy()||events.SelectedIndex<0)return;recorded.RemoveAt(events.SelectedIndex);UpdateEvents();};Button clear=ButtonFor("Clear",75);clear.Click+=delegate{if(IsBusy()||recorded.Count==0)return;if(!SelfTestMode&&MessageBox.Show(ModalOwner,"Clear all "+recorded.Count+" recorded steps?","Auto Loop",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;recorded.Clear();UpdateEvents();};Button save=ButtonFor("Save",75);save.Click+=delegate{SaveRoutine();};Button open=ButtonFor("Open",75);open.Click+=delegate{LoadRoutine();};ContextMenuStrip editMenu=new ContextMenuStrip();editMenu.Items.Add("Change delay",null,delegate{EditDelay();});editMenu.Items.Add("Remove selected step",null,delegate{if(!IsBusy()&&events.SelectedIndex>=0){recorded.RemoveAt(events.SelectedIndex);UpdateEvents();}});events.ContextMenuStrip=editMenu;Button testOnce=ButtonFor("Test once",100);testOnce.Click+=delegate{StartCountdown(false,true);};tips.SetToolTip(testOnce,"Play this recording once without changing its repeat or time settings.");Button[] tools={testOnce,clear,save,open};for(int i=0;i<tools.Length;i++){tools[i].Dock=DockStyle.Fill;tools[i].Margin=new Padding(0,0,i==3?0:6,0);tools[i].Font=new Font("Segoe UI",14);recordingTools.Controls.Add(tools[i],i,0);}recordingHost.Controls.Add(events);recordingHost.Controls.Add(recordCount);recordingHost.Controls.Add(recordingTools);
             Panel modeHost=new Panel{Dock=DockStyle.Fill,Margin=new Padding(0)};modeHost.Controls.Add(normalHost);modeHost.Controls.Add(recordingHost);optionGrid.Controls.Add(modeHost,0,0);
@@ -243,9 +246,11 @@ namespace AutoLoop {
             targetPanel.Controls.Add(new Label{Text="Run in",AutoSize=true,Location=new Point(0,31),ForeColor=ink});
             Button anyApp=ButtonFor("Any app",173),selectedApp=ButtonFor("Selected app",163);anyApp.Location=new Point(125,19);selectedApp.Location=new Point(302,19);anyApp.Height=selectedApp.Height=50;targetPanel.Controls.Add(anyApp);targetPanel.Controls.Add(selectedApp);
             Panel targetDetails=new Panel{Location=new Point(0,80),Size=new Size(480,100),Visible=false};targetPanel.Controls.Add(targetDetails);
-            targets=StyledCombo(420);targets.Location=new Point(0,0);targetDetails.Controls.Add(targets);Button refresh=new IconButton{IconKind="refresh",Bare=true,BackColor=card,ForeColor=ink,Location=new Point(426,0),Size=new Size(32,32),AccessibleName="Refresh apps"};refresh.Click+=delegate{if(!IsBusy())RefreshWindows();};targetDetails.Controls.Add(refresh);
+            // Pick app (click the window) is the main way; the list next to it is the backup and refreshes each time it opens.
+            pickApp=new RoundedButton{Text="Pick app",BackColor=field,ForeColor=accent,Location=new Point(0,0),Size=new Size(150,52),AccessibleName="Pick app by clicking its window"};pickApp.Click+=delegate{if(!IsBusy())StartPick(PickKind.App);};tips.SetToolTip(pickApp,"Click here, then click the window you want Auto Loop to use.");targetDetails.Controls.Add(pickApp);
+            targets=StyledCombo(316);targets.Location=new Point(160,0);targets.DropDown+=delegate{if(!running&&!recording)RefreshWindows();};tips.SetToolTip(targets,"Or choose the app from the list of open windows.");targetDetails.Controls.Add(targets);
             lockTarget=new MintCheckBox{Checked=false,Visible=false};targetPanel.Controls.Add(lockTarget);autoResume=new MintCheckBox{Text="Resume when I return",Checked=true,AutoSize=true,ForeColor=ink,Location=new Point(0,58)};targetDetails.Controls.Add(autoResume);
-            Action syncTarget=delegate{bool selected=lockTarget.Checked;targetDetails.Visible=selected;targets.Enabled=selected;anyApp.BackColor=selected?field:accent;anyApp.ForeColor=selected?ink:bg;selectedApp.BackColor=selected?accent:field;selectedApp.ForeColor=selected?bg:ink;targetPanel.Height=(int)Math.Round((selected?190:88)*CompactFactor);compactRoot.RowStyles[3].Height=(selected?190:88)*CompactFactor;ClientSize=compactScaled?new Size(UiScale.Px(400),UiScale.Px(selected?587:512)):new Size(540,selected?794:692);};lockTarget.CheckedChanged+=delegate{syncTarget();};anyApp.Click+=delegate{if(!IsBusy())lockTarget.Checked=false;};selectedApp.Click+=delegate{if(!IsBusy())lockTarget.Checked=true;};syncTarget();
+            Action syncTarget=delegate{bool selected=lockTarget.Checked;targetDetails.Visible=selected;targets.Enabled=pickApp.Enabled=selected;anyApp.BackColor=selected?field:accent;anyApp.ForeColor=selected?ink:bg;selectedApp.BackColor=selected?accent:field;selectedApp.ForeColor=selected?bg:ink;targetPanel.Height=(int)Math.Round((selected?190:88)*CompactFactor);compactRoot.RowStyles[3].Height=(selected?190:88)*CompactFactor;ClientSize=compactScaled?new Size(UiScale.Px(400),UiScale.Px(selected?587:512)):new Size(540,selected?794:692);};lockTarget.CheckedChanged+=delegate{syncTarget();};anyApp.Click+=delegate{if(!IsBusy())lockTarget.Checked=false;};selectedApp.Click+=delegate{if(!IsBusy())lockTarget.Checked=true;};syncTarget();
             TableLayoutPanel actions=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=5,Margin=new Padding(0,2,0,4)};for(int i=0;i<5;i++)actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,20));playButton=new ActionButton{Text="Start · F6",Symbol="\u25B6",SymbolColor=accent,BackColor=card,ForeColor=ink};recordButton=new ActionButton{Text="Record · F7",Symbol="\u25CF",SymbolColor=Color.FromArgb(255,111,111),BackColor=card,ForeColor=ink};pauseButton=new ActionButton{Text="Pause · F8",Symbol="\u23F8",SymbolColor=ink,BackColor=card,ForeColor=ink};stopButton=new ActionButton{Text="Stop · F9",Symbol="\u25A0",SymbolColor=ink,BackColor=card,ForeColor=ink};Button gear=new ActionButton{Text="Settings",Symbol="\u2699",SymbolColor=ink,BackColor=card,ForeColor=ink};gear.AccessibleName="Settings";tips.SetToolTip(gear,"Shortcuts and advanced settings");gear.Click+=delegate{if(!IsBusy()){using(ModalScope scope=new ModalScope(this))settingsWindow.ShowDialog(ModalOwner);}};Button[] buttons={playButton,recordButton,pauseButton,stopButton,gear};for(int i=0;i<5;i++){buttons[i].Dock=DockStyle.Fill;buttons[i].Margin=new Padding(0,0,5,0);actions.Controls.Add(buttons[i],i,0);}playButton.Click+=delegate{StartCountdown(false);};recordButton.Click+=delegate{ToggleRecord();};pauseButton.Click+=delegate{TogglePause();};stopButton.Click+=delegate{StopAll("Stopped");};actions.Paint+=delegate(object sender,PaintEventArgs e){using(Pen separator=new Pen(Color.FromArgb(57,74,91))){int separatorX=gear.Left-3;e.Graphics.DrawLine(separator,separatorX,12,separatorX,actions.Height-12);}};compactRoot.Controls.Add(actions,0,4);
             Panel footer=new Panel{Dock=DockStyle.Fill};status=new StatusLabel{Text="Ready",Dock=DockStyle.Fill,ForeColor=ink,Font=new Font("Segoe UI",14,FontStyle.Regular),AutoEllipsis=true};detail=new Label{Text="Choose an app, then start.",Visible=false};tips.SetToolTip(status,detail.Text);footer.Controls.Add(status);compactRoot.Controls.Add(footer,0,5);BuildSettings();
             modes.SelectedIndexChanged+=delegate{int mode=modes.SelectedIndex;mouse.Visible=mode==0;keyCapture.Visible=mode==1;normalHost.Visible=mode!=2;recordingHost.Visible=mode==2;actionLabel.Text=mode==1?"Key to repeat":"Mouse button";if(mode==2)recordingHost.BringToFront();else normalHost.BringToFront();for(int i=0;i<3;i++){modeTabs[i].ForeColor=i==mode?bg:ink;modeTabs[i].BackColor=i==mode?accent:card;modeTabs[i].FlatAppearance.BorderColor=i==mode?accent:Color.FromArgb(57,69,84);}};modeTabs[0].ForeColor=bg;modeTabs[0].BackColor=accent;float layout=0.74f*UiScale.Layout;Scale(new SizeF(layout,layout));ScaleCompactFonts(this);keyCapture.Size=mouse.Size;compactScaled=true;ClientSize=new Size(UiScale.Px(400),UiScale.Px(512));interval.TextInset=UiScale.Px(7);interval.Height++;interval.Height--;
@@ -261,7 +266,7 @@ namespace AutoLoop {
             FlowLayoutPanel timing=Row();timing.Dock=DockStyle.None;timing.Width=446;timing.Height=42;hold=Number(1,60000,30,85);timing.Controls.Add(LabelFor("Press duration (ms)"));timing.Controls.Add(hold);page.Controls.Add(timing);
             page.Controls.Add(new Label{Text="Click position",Font=new Font("Segoe UI",12,FontStyle.Bold),AutoSize=true,ForeColor=accent,Margin=new Padding(0,12,0,5)});
             fixedPosition=new MintCheckBox{Text="Always click at the same screen position",AutoSize=true};page.Controls.Add(fixedPosition);
-            FlowLayoutPanel position=Row();position.Dock=DockStyle.None;position.Width=446;position.Height=42;px=Number(-100000,100000,0,85);py=Number(-100000,100000,0,85);Button pick=ButtonFor("Pick in 3s",110);pick.Click+=delegate{settingsWindow.Hide();SetStatus("Position capture in 3 seconds","Move your pointer to the desired spot.");CancelPositionCapture();positionCaptureTimer=new System.Windows.Forms.Timer{Interval=3000};positionCaptureTimer.Tick+=delegate{CancelPositionCapture();px.Value=Math.Max(px.Minimum,Math.Min(px.Maximum,Cursor.Position.X));py.Value=Math.Max(py.Minimum,Math.Min(py.Maximum,Cursor.Position.Y));fixedPosition.Checked=true;SetStatus("Position captured","X: "+px.Value+"  Y: "+py.Value);};positionCaptureTimer.Start();};position.Controls.Add(LabelFor("X"));position.Controls.Add(px);position.Controls.Add(LabelFor("Y"));position.Controls.Add(py);position.Controls.Add(pick);page.Controls.Add(position);
+            FlowLayoutPanel position=Row();position.Dock=DockStyle.None;position.Width=446;position.Height=42;px=Number(-100000,100000,0,85);py=Number(-100000,100000,0,85);Button pick=ButtonFor("Pick spot",110);tips.SetToolTip(pick,"Click here, then click the spot on screen Auto Loop should click.");pick.Click+=delegate{settingsWindow.Hide();StartPick(PickKind.Spot);};position.Controls.Add(LabelFor("X"));position.Controls.Add(px);position.Controls.Add(LabelFor("Y"));position.Controls.Add(py);position.Controls.Add(pick);page.Controls.Add(position);
             FlowLayoutPanel files=Row();files.Dock=DockStyle.None;files.Width=446;files.Height=44;Button save=ButtonFor("Save routine",140);save.Click+=delegate{SaveRoutine();};Button open=ButtonFor("Open routine",140);open.Click+=delegate{LoadRoutine();};Button done=ButtonFor("Done",100);done.DialogResult=DialogResult.OK;files.Controls.Add(save);files.Controls.Add(open);files.Controls.Add(done);page.Controls.Add(files);settingsWindow.AcceptButton=done;settingsWindow.CancelButton=done;
             settingsWindow.FormClosing+=delegate(object sender,FormClosingEventArgs e){if(e.CloseReason==CloseReason.UserClosing){e.Cancel=true;settingsWindow.Hide();}};
         }
@@ -273,8 +278,168 @@ namespace AutoLoop {
             public ModalScope(MainForm owner){form=owner;previous=form.changingShortcuts;form.changingShortcuts=true;}
             public void Dispose(){form.changingShortcuts=previous;}
         }
-        void CancelPositionCapture(){if(positionCaptureTimer!=null){positionCaptureTimer.Stop();positionCaptureTimer.Dispose();positionCaptureTimer=null;}}
-        protected override void Dispose(bool disposing){if(disposing){CancelPositionCapture();if(timer!=null)timer.Dispose();if(settingsWindow!=null)settingsWindow.Dispose();if(tips!=null)tips.Dispose();}base.Dispose(disposing);}
+        protected override void Dispose(bool disposing){if(disposing){CancelPick();HideChrome();if(timer!=null)timer.Dispose();if(settingsWindow!=null)settingsWindow.Dispose();if(tips!=null)tips.Dispose();foreach(IDisposable d in new IDisposable[]{tray,trayMenu,bar,countdownBadge,spotBadge,spotTimer})if(d!=null)d.Dispose();}base.Dispose(disposing);}
+
+        // ---- Pick app / pick spot: the next left click anywhere (outside Auto Loop) chooses the window or the spot. ----
+        internal enum PickKind{None,App,Spot}
+        internal PickKind picking; long pickDeadline; int swallowPickUp;
+        void StartPick(PickKind kind) {
+            if(keyboardHook==IntPtr.Zero||mouseHook==IntPtr.Zero){Message("Picking needs the input hooks, which could not be installed. Choose the app from the list, or type the X and Y position.");return;}
+            picking=kind;pickDeadline=Stopwatch.GetTimestamp()+20L*Stopwatch.Frequency;swallowPickUp=0;
+            SetStatus(kind==PickKind.App?"Click the app to use":"Click the spot to click on","Press Esc or right-click to cancel.");UpdateChrome();
+        }
+        void CancelPick() {
+            if(picking==PickKind.None)return;picking=PickKind.None;
+            if(status!=null){SetStatus("Ready","Picking canceled.");UpdateChrome();}
+        }
+        void RunOnUi(Action action){if(SelfTestMode||!IsHandleCreated)action();else BeginInvoke(action);}
+        // Called from the mouse hook. Returns non-zero to swallow the event so the picking click doesn't also click the app.
+        IntPtr PickMouse(Native.MOUSE m,int msg) {
+            if(swallowPickUp!=0&&msg==swallowPickUp){swallowPickUp=0;return new IntPtr(1);}
+            bool anyDown=msg==0x201||msg==0x204||msg==0x207||msg==0x20B;
+            if(anyDown)swallowPickUp=0; // never hold back a later, unrelated release if the pick release went missing
+            if(picking==PickKind.None)return IntPtr.Zero;
+            bool left=msg==0x201,right=msg==0x204;if(!left&&!right)return IntPtr.Zero;
+            if(!PointerAllowed(m.pt,false)){
+                // A click on Auto Loop itself cancels, except on the status bar, whose Cancel button handles it.
+                bool onBar=bar!=null&&bar.Visible&&TestRootAt==null&&Native.GetAncestor(Native.WindowFromPoint(m.pt),Native.RootWindow)==bar.Handle;
+                if(!onBar)CancelPick();return IntPtr.Zero;
+            }
+            swallowPickUp=left?0x202:0x205;
+            if(right){CancelPick();return new IntPtr(1);}
+            PickKind kind=picking;picking=PickKind.None;Native.POINT point=m.pt;
+            RunOnUi(delegate{CompletePick(kind,point);});
+            return new IntPtr(1);
+        }
+        void CompletePick(PickKind kind,Native.POINT point) {
+            if(kind==PickKind.Spot){
+                px.Value=Math.Max(px.Minimum,Math.Min(px.Maximum,point.X));py.Value=Math.Max(py.Minimum,Math.Min(py.Maximum,point.Y));fixedPosition.Checked=true;
+                ShowSpotMarker(point);SetStatus("Click spot set · X "+px.Value+", Y "+py.Value,"Auto Loop clicks this spot. Turn off \"Always click at the same screen position\" in Settings to click at the pointer again.");UpdateChrome();return;
+            }
+            IntPtr root=TestRootAt!=null?TestRootAt(point):Native.GetAncestor(Native.WindowFromPoint(point),Native.RootWindow);
+            if(root==IntPtr.Zero){SetStatus("No app picked","Click inside the window you want to use.");UpdateChrome();return;}
+            SelectTargetWindow(root);UpdateChrome();
+        }
+        void SelectTargetWindow(IntPtr root) {
+            RefreshWindows();int found=-1;
+            for(int i=0;i<targets.Items.Count;i++)if(((WindowChoice)targets.Items[i]).Handle==root){found=i;break;}
+            if(found<0){
+                uint process=Native.ProcessId(root);string title=Native.Title(root);
+                if(title.Length==0){try{title=Process.GetProcessById((int)process).ProcessName;}catch{title="Selected window";}}
+                targets.Items.Add(new WindowChoice{Handle=root,Process=process,Title=title});found=targets.Items.Count-1;
+            }
+            targets.SelectedIndex=found;lockTarget.Checked=true;WindowChoice choice=(WindowChoice)targets.Items[found];
+            if(ProcessElevated(choice.Process))Message("\""+choice.Title+"\" is running as administrator. Windows blocks simulated input and recording from a normal app, so Auto Loop cannot control it.\n\nRun the target app normally, or run Auto Loop as administrator.");
+            else SetStatus("App selected · "+choice.Title,"Auto Loop will only send input to this app.");
+        }
+        void ShowSpotMarker(Native.POINT point) {
+            if(SelfTestMode)return;
+            if(spotBadge==null)spotBadge=new ScreenBadge(true);
+            spotBadge.ShowAt(new Point(point.X,point.Y));
+            if(spotTimer==null){spotTimer=new System.Windows.Forms.Timer{Interval=1500};spotTimer.Tick+=delegate{spotTimer.Stop();if(spotBadge!=null)spotBadge.Hide();};}
+            spotTimer.Stop();spotTimer.Start();
+        }
+
+        // ---- Floating status bar, countdown badge and tray icon. ----
+        FloatingBar bar; ScreenBadge countdownBadge, spotBadge; System.Windows.Forms.Timer spotTimer;
+        NotifyIcon tray; ContextMenuStrip trayMenu; ToolStripMenuItem trayPause; long trayNoticeUntil; string lastTrayText="";
+        internal string BarText="", CountdownText=""; internal bool TrayWanted; bool runOnce;
+        static readonly Color GreenDot=Color.FromArgb(68,220,143), AmberDot=Color.FromArgb(245,203,112), RedDot=Color.FromArgb(255,111,111);
+        string Progress() {
+            if(repeatCount>0)return completed+" / "+repeatCount;
+            if(maxDuration>0)return Clock(Math.Max(0,maxDuration-activeClock))+" left";
+            return completed+" done";
+        }
+        static string Clock(long ms){long s=(ms+999)/1000;return s>=3600?(s/3600)+":"+(s/60%60).ToString("00")+":"+(s%60).ToString("00"):(s/60)+":"+(s%60).ToString("00");}
+        void UpdateChrome() {
+            string text="",left="",right="";Color dot=GreenDot;bool stopStyle=true;
+            string pauseKey=KeyName(preferences.Hotkeys[2]),stopKey=KeyName(preferences.Hotkeys[3]);
+            if(picking!=PickKind.None){text=picking==PickKind.App?"Click the app to use":"Click the spot to click on";right="Cancel · Esc";dot=Color.FromArgb(103,241,173);stopStyle=false;}
+            else if(running||recording){
+                bool paused=userPaused||focusPaused;
+                left=(userPaused?"Resume · ":"Pause · ")+pauseKey; // waiting for the app to come back is not a pause the user can "resume"
+                if(recording){dot=paused?AmberDot:RedDot;text=paused?"Recording paused":"Recording · "+recorded.Count+" steps";right="Finish · "+KeyName(preferences.Hotkeys[1]);stopStyle=false;}
+                else{dot=paused?AmberDot:GreenDot;text=paused?"Paused · "+(focusPauseReason.Length>0?focusPauseReason:"by you"):(runOnce?"Testing once":"Running · "+Progress());right="Stop · "+stopKey;}
+            }
+            BarText=text;
+            string countdown="";
+            if(pendingPlay||pendingRecord){long remaining=countdownUntil-Stopwatch.GetTimestamp();if(remaining>0)countdown=Math.Ceiling(remaining/(double)Stopwatch.Frequency).ToString();}
+            CountdownText=countdown;
+            TrayWanted=running||recording||pendingPlay||pendingRecord||Stopwatch.GetTimestamp()<trayNoticeUntil;
+            if(SelfTestMode)return;
+            if(text.Length>0){
+                if(bar==null){bar=new FloatingBar();bar.LeftClicked+=delegate{TogglePause();UpdateChrome();};bar.RightClicked+=delegate{if(picking!=PickKind.None)CancelPick();else if(recording)FinishRecording();else StopAll("Stopped");UpdateChrome();};}
+                bar.SetState(text,dot,left,right,stopStyle);
+                if(!bar.Visible){bar.PlaceNear(Cursor.Position);bar.Show();}
+            } else if(bar!=null&&bar.Visible)bar.Hide();
+            if(countdown.Length>0){
+                if(countdownBadge==null)countdownBadge=new ScreenBadge(false);
+                countdownBadge.SetText(countdown,(pendingRecord?"Recording · ":"Starting · ")+KeyName(preferences.Hotkeys[3])+" cancels");
+                if(!countdownBadge.Visible)countdownBadge.ShowCentered(Cursor.Position);
+            } else if(countdownBadge!=null&&countdownBadge.Visible)countdownBadge.Hide();
+            if(TrayWanted){
+                EnsureTray();string tip="Auto Loop · "+(text.Length>0?text:countdown.Length>0?"starting in "+countdown:"finished");if(tip.Length>63)tip=tip.Substring(0,63);
+                if(tip!=lastTrayText){tray.Text=tip;lastTrayText=tip;}
+                if(!tray.Visible)tray.Visible=true;
+            } else if(tray!=null&&tray.Visible)tray.Visible=false;
+        }
+        void EnsureTray() {
+            if(tray!=null)return;
+            trayMenu=new ContextMenuStrip();trayPause=new ToolStripMenuItem("Pause");trayPause.Click+=delegate{TogglePause();UpdateChrome();};
+            ToolStripMenuItem stop=new ToolStripMenuItem("Stop");stop.Click+=delegate{if(recording)FinishRecording();else StopAll("Stopped");UpdateChrome();};
+            ToolStripMenuItem show=new ToolStripMenuItem("Show Auto Loop");show.Click+=delegate{ShowMainWindow();};
+            trayMenu.Items.AddRange(new ToolStripItem[]{trayPause,stop,new ToolStripSeparator(),show});
+            trayMenu.Opening+=delegate{trayPause.Enabled=running||recording;trayPause.Text=userPaused?"Resume":"Pause";stop.Enabled=running||recording||pendingPlay||pendingRecord;};
+            tray=new NotifyIcon{Icon=Icon??SystemIcons.Application,Text="Auto Loop",ContextMenuStrip=trayMenu};
+            tray.DoubleClick+=delegate{ShowMainWindow();};tray.BalloonTipClicked+=delegate{ShowMainWindow();};
+        }
+        void ShowMainWindow(){if(WindowState==FormWindowState.Minimized)WindowState=FormWindowState.Normal;Show();Activate();}
+        void HideChrome(){if(bar!=null)bar.Hide();if(countdownBadge!=null)countdownBadge.Hide();if(spotBadge!=null)spotBadge.Hide();if(tray!=null)tray.Visible=false;}
+        internal string NoticeText(bool targetClosed) {
+            string unit=modes.SelectedIndex==0?"clicks":modes.SelectedIndex==1?"presses":"plays";
+            string done=completed+" "+(completed==1?unit.TrimEnd('s').Replace("presse","press"):unit)+" in "+Clock(activeClock);
+            return targetClosed?"The selected app closed after "+done+".":done+". "+KeyName(preferences.Hotkeys[0])+" runs it again.";
+        }
+        void NotifyDone(bool targetClosed) {
+            if(runOnce)return;string body=NoticeText(targetClosed);
+            if(SelfTestMode){LastNotice=body;return;}
+            trayNoticeUntil=Stopwatch.GetTimestamp()+10L*Stopwatch.Frequency;EnsureTray();tray.Visible=true;
+            tray.ShowBalloonTip(5000,targetClosed?"Auto Loop stopped":"Auto Loop finished",body,ToolTipIcon.None);
+        }
+        internal string LastNotice="";
+
+        // ---- Plain-language hints: under Interval, and in the status line for the Stop after rule. ----
+        bool hintsWired;
+        void WireHints(){hintsWired=true;interval.ValueChanged+=delegate{UpdateHints(true);};stopValue.ValueChanged+=delegate{UpdateHints(true);};stopRule.SelectedIndexChanged+=delegate{UpdateHints(true);};modes.SelectedIndexChanged+=delegate{UpdateHints(true);};UpdateHints(false);}
+        static string Amount(double value){return value>=10?Math.Round(value).ToString("0"):Math.Round(value,1).ToString("0.#");}
+        static string Duration(double ms) {
+            double s=ms/1000;if(s<1)return "under a second";if(s<59.5)return Amount(s)+(Amount(s)=="1"?" second":" seconds");
+            long total=(long)Math.Round(s);if(total<3600)return (total/60)+" min"+(total%60>0?" "+(total%60)+" s":"");
+            return (total/3600)+" h"+(total/60%60>0?" "+(total/60%60)+" min":"");
+        }
+        internal string IntervalHintText() {
+            bool keys=modes.SelectedIndex==1;double ms=(double)interval.Value;
+            if(ms<1000)return "about "+Amount(1000/ms)+(keys?" presses":" clicks")+" per second";
+            return (keys?"1 press":"1 click")+" every "+Amount(ms/1000)+(Amount(ms/1000)=="1"?" second":" seconds");
+        }
+        internal string StopHintText() {
+            int rule=stopRule.SelectedIndex,mode=modes.SelectedIndex;double count=(double)stopValue.Value;
+            if(rule==2)return mode==2?"loops until you press Stop":"runs until you press Stop";
+            if(rule==3)return "stops at whichever limit comes first";
+            if(mode==2){
+                long pass=recorded.Sum(s=>(long)s.Delay);
+                if(rule==0)return pass>0?"about "+Duration(count*pass)+" in total":"plays the recording "+Amount(count)+(count==1?" time":" times");
+                return pass>0?"about "+Amount(Math.Max(1,Math.Floor(count*1000/Math.Max(10,pass))))+" plays, then stops":"loops for "+Duration(count*1000);
+            }
+            string unit=mode==1?" presses":" clicks";double ms=(double)interval.Value;
+            if(rule==0)return "takes about "+Duration(count*ms);
+            return "about "+Amount(Math.Max(1,Math.Floor(count*1000/ms)))+unit+", then stops";
+        }
+        void UpdateHints(bool announce) {
+            if(!hintsWired||intervalHint==null)return;
+            intervalHint.Text=IntervalHintText();
+            if(announce&&!running&&!recording&&!pendingPlay&&!pendingRecord&&picking==PickKind.None)SetStatus("Ready · "+StopHintText(),"What happens when you press Start, based on Stop after.");
+        }
         void Message(string text) { LastMessage=text; if(!SelfTestMode) MessageBox.Show(ModalOwner,text,"Auto Loop",MessageBoxButtons.OK,MessageBoxIcon.Information); }
         void SetStatus(string text,string extra) {LastMessage=text;status.Text=text;detail.Text=extra;tips.SetToolTip(status,extra);}
         void RefreshWindows() {
@@ -285,7 +450,7 @@ namespace AutoLoop {
         bool BindTarget() {
             boundTarget=null; if(!lockTarget.Checked)return true;
             WindowChoice target=targets.SelectedItem as WindowChoice;
-            if(target==null||!Native.IsWindow(target.Handle)||Native.ProcessId(target.Handle)!=target.Process){Message("Choose an open target app. Use Refresh apps if it is missing.");return false;}
+            if(target==null||!Native.IsWindow(target.Handle)||Native.ProcessId(target.Handle)!=target.Process){Message("Pick the app to use (click Pick app, then click its window), or choose it from the list.");return false;}
             if(ProcessElevated(target.Process)){Message("\""+target.Title+"\" is running as administrator. Windows blocks simulated input and recording from a normal app, so Auto Loop cannot control it.\n\nRun the target app normally, or run Auto Loop as administrator.");return false;}
             boundTarget=target;return true;
         }
@@ -329,14 +494,15 @@ namespace AutoLoop {
         }
         // SendInput moves are applied asynchronously, so right after a playback Move the cursor may not be there yet: check the intended point.
         Native.POINT lastMovePoint; long lastMoveClock=long.MinValue/2;
-        bool PointerOnTarget() { Native.POINT point; if(activeClock-lastMoveClock<=50)point=lastMovePoint;else Native.GetCursorPos(out point); return PointerAllowed(point,true); }
+        Native.POINT PointerPoint() { Native.POINT point; if(activeClock-lastMoveClock<=50)point=lastMovePoint;else Native.GetCursorPos(out point); return point; }
+        bool PointerOnTarget() { return PointerAllowed(PointerPoint(),true); }
         bool ShortcutHeld() {
             foreach(int binding in preferences.Hotkeys) if((Native.GetAsyncKeyState(binding & 0xFFFF)&0x8000)!=0)return true;
             return (Native.GetAsyncKeyState(16)&0x8000)!=0||(Native.GetAsyncKeyState(17)&0x8000)!=0||(Native.GetAsyncKeyState(18)&0x8000)!=0||(Native.GetAsyncKeyState(91)&0x8000)!=0||(Native.GetAsyncKeyState(92)&0x8000)!=0;
         }
         void StartCountdown(bool rec, bool once=false) {
             if(running||recording||pendingPlay||pendingRecord)return;
-            CancelPositionCapture();elevationCache.Clear();
+            CancelPick();elevationCache.Clear();
             if(rec&&(keyboardHook==IntPtr.Zero||mouseHook==IntPtr.Zero)){Message("Recording is unavailable because the input hooks could not be installed. Restart Auto Loop.");return;}
             if(!BindTarget())return;
             if(!rec&&!stopHotkeyRegistered){Message("Set an available global Stop shortcut in Settings before starting playback.");return;}
@@ -374,7 +540,7 @@ namespace AutoLoop {
                 playback.Add(new Step{Kind=click?"MouseUp":"KeyUp",Code=code,Delay=(int)hold.Value,Extended=!click&&Native.Extended(code)});
                 playback.Add(new Step{Kind="Wait",Delay=(int)(interval.Value-hold.Value)});
             }
-            lastMoveClock=long.MinValue/2;repeatCount=once?1:(int)repeats.Value;maxDuration=once?0:(long)limit.Value*1000;completed=0;index=0;due=playback[0].Delay;running=true;userPaused=false;focusPaused=false;ResetClock();
+            runOnce=once;lastMoveClock=long.MinValue/2;repeatCount=once?1:(int)repeats.Value;maxDuration=once?0:(long)limit.Value*1000;completed=0;index=0;due=playback[0].Delay;running=true;userPaused=false;focusPaused=false;ResetClock();
             SetStatus(once?"Testing once":"Running","Stop: "+KeyName(preferences.Hotkeys[3])+(boundTarget==null?". Input follows the active app.":". Input is restricted to the selected app."));
         }
         static Step Clone(Step s){return new Step{Kind=s.Kind,Code=s.Code,X=s.X,Y=s.Y,Delay=s.Delay,Extended=s.Extended};}
@@ -408,12 +574,14 @@ namespace AutoLoop {
             if(!userPaused){focusPaused=false;wasEligible=false;}
             SetStatus(userPaused?"Paused":"Resuming",userPaused?"Press Pause again to resume, or Stop all to finish.":"The routine continues when the target app is active.");
         }
-        void StopAll(string reason) {
-            CancelPositionCapture();
+        void StopAll(string reason,bool notify=false,bool targetClosed=false) {
+            CancelPick();
             pendingPlay=false;pendingRecord=false;pendingSingleRun=false;focusPauseReason="";
             if(recording)FinishRecording();running=false;recording=false;userPaused=false;focusPaused=false;wall.Stop();bool released=ReleaseAll();
             SetEditingEnabled(true);
             SetStatus(reason,released?"All generated keys and mouse buttons have been released.":"Some generated inputs could not be released. Press Stop to retry.");
+            if(notify)NotifyDone(targetClosed);
+            UpdateChrome();
         }
         void PauseForFocusLoss(string reason=null) {
             focusPauseReason=reason??FocusBlockReason()??(boundTarget==null?"Auto Loop is active":"selected app is not active");
@@ -454,11 +622,15 @@ namespace AutoLoop {
         void TickEngine() {
             if(busy)return;busy=true;
             try {
+                if(picking!=PickKind.None&&Stopwatch.GetTimestamp()>pickDeadline)CancelPick();
                 if(pendingPlay||pendingRecord) {
                     long remaining=countdownUntil-Stopwatch.GetTimestamp();
                     if(remaining>0){status.Text=(pendingRecord?"Recording in ":"Starting in ")+Math.Ceiling(remaining/(double)Stopwatch.Frequency)+" seconds";return;}
                     if(ShortcutHeld()){status.Text="Release the shortcut keys to continue";return;}
-                    bool rec=pendingRecord,once=pendingSingleRun;pendingPlay=false;pendingRecord=false;pendingSingleRun=false;if(rec)BeginRecording();else BeginPlayback(once);
+                    bool rec=pendingRecord,once=pendingSingleRun;pendingPlay=false;pendingRecord=false;pendingSingleRun=false;
+                    // Overlays must be gone before the first playback click is checked against the window under the pointer.
+                    if(countdownBadge!=null)countdownBadge.Hide();if(spotBadge!=null)spotBadge.Hide();
+                    if(rec)BeginRecording();else BeginPlayback(once);
                 }
                 if(recording&&recordingLimitReached){
                     FinishRecording();
@@ -466,7 +638,7 @@ namespace AutoLoop {
                     return;
                 }
                 if(!running&&!recording)return;
-                if(TargetGone()){StopAll("Target app closed — stopped");return;}
+                if(TargetGone()){StopAll("Target app closed — stopped",running,true);return;}
                 AdvanceClock();bool focus=FocusEligible();
                 if(!focus||userPaused) {
                     if(!focus&&!focusPaused){PauseForFocusLoss();if(!running&&!recording)return;}
@@ -474,18 +646,22 @@ namespace AutoLoop {
                 }
                 if(focusPaused){if(ShortcutHeld())return;focusPaused=false;focusPauseReason="";}
                 if(recording){status.Text="Recording  ·  "+recorded.Count+" steps";return;}
-                if(maxDuration>0&&activeClock>=maxDuration){StopAll("Time limit reached");return;}
+                if(maxDuration>0&&activeClock>=maxDuration){StopAll("Time limit reached",true);return;}
                 int budget=0;
                 while(running&&activeClock>=due&&budget++<100) {
                     if(!FocusEligible()){PauseForFocusLoss();return;}
                     string kind=playback[index].Kind;
-                    if((kind=="MouseDown"||kind=="Wheel")&&!PointerOnTarget()){PauseForPointer();return;}
+                    if(kind=="MouseDown"||kind=="Wheel"){
+                        // Our own status bar must never be clicked by playback: move it to the other screen edge first.
+                        if(bar!=null&&bar.Visible){Native.POINT point=PointerPoint();if(bar.Bounds.Contains(point.X,point.Y))bar.MoveAway();}
+                        if(!PointerOnTarget()){PauseForPointer();return;}
+                    }
                     Execute(playback[index]);index++;
-                    if(index==playback.Count){if(!ReleaseAll()){StopAll("Stopped — input release failed");return;}completed++;if(repeatCount>0&&completed>=repeatCount){StopAll("Finished  ·  "+completed+" repeats");return;}index=0;due=Math.Max(activeClock,due)+playback[0].Delay;if(playback.All(s=>s.Delay==0))due+=10;continue;}
+                    if(index==playback.Count){if(!ReleaseAll()){StopAll("Stopped — input release failed");return;}completed++;if(repeatCount>0&&completed>=repeatCount){StopAll("Finished  ·  "+completed+" repeats",true);return;}index=0;due=Math.Max(activeClock,due)+playback[0].Delay;if(playback.All(s=>s.Delay==0))due+=10;continue;}
                     due=Math.Max(due,activeClock)+playback[index].Delay;
                 }
                 status.Text="Running  ·  "+completed+(repeatCount>0?" / "+repeatCount:"")+" repeats";
-            } catch(Exception e){StopAll("Stopped — input could not be sent");if(!SelfTestMode&&WindowState==FormWindowState.Minimized)WindowState=FormWindowState.Normal;Message(e.Message);}finally{busy=false;}
+            } catch(Exception e){StopAll("Stopped — input could not be sent");if(!SelfTestMode&&WindowState==FormWindowState.Minimized)WindowState=FormWindowState.Normal;Message(e.Message);}finally{try{UpdateChrome();}catch{}busy=false;}
         }
         void Execute(Step s) {
             if(s.Kind=="KeyDown"){Send(Native.Key(s.Code,false,s.Extended));heldKeys[s.Code]=s.Extended;}
@@ -525,6 +701,8 @@ namespace AutoLoop {
             try {
                 if(code>=0) {
                     Native.KBD k=(Native.KBD)Marshal.PtrToStructure(data,typeof(Native.KBD));int key=(int)k.vkCode;int msg=message.ToInt32();
+                    // Esc cancels Pick app / Pick spot; the key press is swallowed so it doesn't reach the app underneath.
+                    if(picking!=PickKind.None&&key==27&&(k.flags&0x10)==0&&(msg==0x100||msg==0x104)){CancelPick();return new IntPtr(1);}
                     if((k.flags&0x10)==0&&CanRecord()) {
                         bool down=msg==0x100||msg==0x104;bool up=msg==0x101||msg==0x105;
                         if(down&&!IsControlStroke(key)){if(!recordKeys.Contains(key)&&ReserveRecordingSteps(1,1)){recordKeys.Add(key);CaptureStep(new Step{Kind="KeyDown",Code=key,Extended=(k.flags&1)!=0});}}
@@ -536,6 +714,10 @@ namespace AutoLoop {
         }
         IntPtr MouseHook(int code,IntPtr message,IntPtr data) {
             try {
+                if(code>=0&&(picking!=PickKind.None||swallowPickUp!=0)) {
+                    Native.MOUSE pm=(Native.MOUSE)Marshal.PtrToStructure(data,typeof(Native.MOUSE));
+                    if((pm.flags&1)==0){IntPtr handled=PickMouse(pm,message.ToInt32());if(handled!=IntPtr.Zero)return handled;}
+                }
                 if(code>=0&&CanRecord()) {
                     Native.MOUSE m=(Native.MOUSE)Marshal.PtrToStructure(data,typeof(Native.MOUSE));if((m.flags&1)!=0)return Native.CallNextHookEx(mouseHook,code,message,data);
                     int msg=message.ToInt32(),button=0;bool down=false,up=false;
@@ -604,7 +786,7 @@ namespace AutoLoop {
             FileInfo info=new FileInfo(path);if(info.Length>30*1024*1024)throw new InvalidDataException("File exceeds the 30 MB limit.");
             using(XmlReader reader=XmlReader.Create(path,new XmlReaderSettings{DtdProcessing=DtdProcessing.Prohibit,XmlResolver=null,MaxCharactersInDocument=30*1024*1024}))return (T)new XmlSerializer(typeof(T)).Deserialize(reader);
         }
-        void LoadRoutine(){if(IsBusy())return;using(ModalScope scope=new ModalScope(this)){using(OpenFileDialog d=new OpenFileDialog{Filter="Auto Loop routine (*.autoloop)|*.autoloop",InitialDirectory=Path.Combine(dataRoot,"Routines")}){if(d.ShowDialog(ModalOwner)!=DialogResult.OK)return;try{CancelPositionCapture();ApplyRoutine(ReadXml<Routine>(d.FileName));SetStatus("Routine opened","Choose the target app again before starting. Screen positions must match the recording.");}catch(Exception e){Message("Could not open the routine: "+e.Message);}}}}
+        void LoadRoutine(){if(IsBusy())return;using(ModalScope scope=new ModalScope(this)){using(OpenFileDialog d=new OpenFileDialog{Filter="Auto Loop routine (*.autoloop)|*.autoloop",InitialDirectory=Path.Combine(dataRoot,"Routines")}){if(d.ShowDialog(ModalOwner)!=DialogResult.OK)return;try{CancelPick();ApplyRoutine(ReadXml<Routine>(d.FileName));SetStatus("Routine opened","Choose the target app again before starting. Screen positions must match the recording.");}catch(Exception e){Message("Could not open the routine: "+e.Message);}}}}
         public static void ValidateRoutine(Routine r) {
             if(r==null||r.Version!=1||r.Mode<0||r.Mode>2||r.Interval<10||r.Interval>3600000||r.Hold<1||r.Hold>60000||r.Hold>r.Interval||r.Repeat<0||r.Repeat>1000000||r.LimitSeconds<0||r.LimitSeconds>86400||r.Key<8||r.Key>254||r.MouseButton<0||r.MouseButton>2||Math.Abs((long)r.FixedX)>100000||Math.Abs((long)r.FixedY)>100000)throw new InvalidDataException("Routine settings are invalid or unsupported.");ValidateSteps(r.Steps,false);
         }
@@ -620,17 +802,29 @@ namespace AutoLoop {
             if(requireBalanced&&(keys.Count>0||buttons.Count>0))throw new InvalidDataException("Recording has an unmatched held key or mouse button. Restore the pair or record again.");
         }
         void ApplyRoutine(Routine r){ValidateRoutine(r);modes.SelectedIndex=r.Mode;interval.Value=r.Interval;hold.Value=r.Hold;repeats.Value=r.Repeat;limit.Value=r.LimitSeconds;actionKey=r.Key;SelectActionKey(actionKey);mouse.SelectedIndex=r.MouseButton;fixedPosition.Checked=r.FixedPosition;px.Value=r.FixedX;py.Value=r.FixedY;lockTarget.Checked=r.LockTarget;autoResume.Checked=r.AutoResume;targets.SelectedIndex=-1;recorded=r.Steps.Select(Clone).ToList();SyncStopDisplay();UpdateEvents();}
-        void LoadPreferences(){try{string path=Path.Combine(dataRoot,"settings.xml");if(File.Exists(path)){Preferences p=ReadXml<Preferences>(path);if(p.Hotkeys==null||p.Hotkeys.Length!=4||p.Hotkeys.Select(k=>k&0xFFFF).Distinct().Count()!=4||p.Hotkeys.Any(k=>(k&0xFFFF)<8||(k&0xFFFF)>254||IsModifier(k&0xFFFF)))throw new InvalidDataException();preferences=p;}}catch{preferences=new Preferences();}}
-        bool SavePreferences(){try{WriteXml(Path.Combine(dataRoot,"settings.xml"),preferences);return true;}catch(Exception e){SetStatus("Settings not saved","Auto Loop could not write settings.xml beside the app. Move it to a folder you can write to. ("+e.Message+")");return false;}}
+        // Self-tests, previews and routine checks must not read or change the user's settings.xml.
+        public static bool Isolated;
+        void RestoreLastSettings() {
+            Routine last=preferences.Last;preferences.Last=null;if(last==null)return;
+            try{
+                last.Steps=new List<Step>();ApplyRoutine(last);
+                if(last.LockTarget&&!string.IsNullOrEmpty(last.TargetTitle))for(int i=0;i<targets.Items.Count;i++)if(((WindowChoice)targets.Items[i]).Title==last.TargetTitle){targets.SelectedIndex=i;break;}
+                SetStatus("Ready · settings from last time","Your settings from the last session were restored.");
+            }catch{ /* Saved settings that no longer validate are ignored; defaults stay. */ }
+        }
+        void LoadPreferences(){if(Isolated)return;try{string path=Path.Combine(dataRoot,"settings.xml");if(File.Exists(path)){Preferences p=ReadXml<Preferences>(path);if(p.Hotkeys==null||p.Hotkeys.Length!=4||p.Hotkeys.Select(k=>k&0xFFFF).Distinct().Count()!=4||p.Hotkeys.Any(k=>(k&0xFFFF)<8||(k&0xFFFF)>254||IsModifier(k&0xFFFF)))throw new InvalidDataException();preferences=p;}}catch{preferences=new Preferences();}}
+        bool SavePreferences(){try{preferences.Last=CurrentRoutine();preferences.Last.Steps=new List<Step>();WriteXml(Path.Combine(dataRoot,"settings.xml"),preferences);return true;}catch(Exception e){SetStatus("Settings not saved","Auto Loop could not write settings.xml beside the app. Move it to a folder you can write to. ("+e.Message+")");return false;}}
         internal void VerifyRoutine(string input,string output){SelfTestMode=true;TestFocus=true;TestTime=0;TestRootAt=point=>IntPtr.Zero;List<Native.INPUT> sent=new List<Native.INPUT>();InputSink=sent.Add;ApplyRoutine(ReadXml<Routine>(input));if(!ValidatePlayback())throw new InvalidDataException(LastMessage);BeginPlayback();long duration=recorded.Sum(x=>(long)x.Delay),cap=Math.Max(1000,duration)*Math.Max(1,repeatCount)+10000;while(running&&TestTime.Value<cap){TickEngine();TestTime+=10;}if(running)throw new Exception("Routine did not finish");int downs=sent.Count(i=>i.type==0&&(i.u.mi.flags&2)!=0),ups=sent.Count(i=>i.type==0&&(i.u.mi.flags&4)!=0);File.WriteAllLines(output,new string[]{"Engine simulation of supplied routine (no desktop input sent)","Completed repeats: "+completed,"Left mouse presses: "+downs,"Left mouse releases: "+ups,"Held buttons remaining: "+heldMouse.Count,"Held keys remaining: "+heldKeys.Count});}
         public void RunInternalTests(string path){SelfTests.Run(this,path);}
         internal bool TestApply(Routine r){ApplyRoutine(r);return CurrentRoutine().Steps.Count==r.Steps.Count;}
         Point PositionInForm(Control control){Point point=Point.Empty;while(control!=null&&control!=this){point.Offset(control.Left,control.Top);control=control.Parent;}return point;}
-        internal void SavePreviews(string path){StopAll("Ready");TestFocus=true;WindowState=FormWindowState.Normal;lockTarget.Checked=false;stopRule.SelectedIndex=2;SelectActionKey(70);Show();Application.DoEvents();for(int mode=0;mode<3;mode++){modes.SelectedIndex=mode;if(mode==2){recorded=new List<Step>{new Step{Kind="Move",X=320,Y=240},new Step{Kind="MouseDown",Code=(int)MouseButtons.Left},new Step{Kind="Wait",Delay=500},new Step{Kind="MouseUp",Code=(int)MouseButtons.Left}};UpdateEvents();}PerformLayout();Application.DoEvents();using(Bitmap bitmap=new Bitmap(Width,Height)){DrawToBitmap(bitmap,new Rectangle(0,0,Width,Height));bitmap.Save(Path.Combine(path,new string[]{"Click","Keys","Record"}[mode]+".png"));}}lockTarget.Checked=true;PerformLayout();Application.DoEvents();using(Bitmap bitmap=new Bitmap(Width,Height)){DrawToBitmap(bitmap,new Rectangle(0,0,Width,Height));bitmap.Save(Path.Combine(path,"Selected app.png"));}settingsWindow.Show(this);Application.DoEvents();using(Bitmap bitmap=new Bitmap(settingsWindow.Width,settingsWindow.Height)){settingsWindow.DrawToBitmap(bitmap,new Rectangle(0,0,bitmap.Width,bitmap.Height));bitmap.Save(Path.Combine(path,"Settings.png"));}settingsWindow.Hide();}
+        internal void SavePreviews(string path){StopAll("Ready");TestFocus=true;WindowState=FormWindowState.Normal;lockTarget.Checked=false;stopRule.SelectedIndex=2;SelectActionKey(70);Show();Application.DoEvents();for(int mode=0;mode<3;mode++){modes.SelectedIndex=mode;if(mode==2){recorded=new List<Step>{new Step{Kind="Move",X=320,Y=240},new Step{Kind="MouseDown",Code=(int)MouseButtons.Left},new Step{Kind="Wait",Delay=500},new Step{Kind="MouseUp",Code=(int)MouseButtons.Left}};UpdateEvents();}PerformLayout();Application.DoEvents();using(Bitmap bitmap=new Bitmap(Width,Height)){DrawToBitmap(bitmap,new Rectangle(0,0,Width,Height));bitmap.Save(Path.Combine(path,new string[]{"Click","Keys","Record"}[mode]+".png"));}}lockTarget.Checked=true;PerformLayout();Application.DoEvents();using(Bitmap bitmap=new Bitmap(Width,Height)){DrawToBitmap(bitmap,new Rectangle(0,0,Width,Height));bitmap.Save(Path.Combine(path,"Selected app.png"));}settingsWindow.Show(this);Application.DoEvents();using(Bitmap bitmap=new Bitmap(settingsWindow.Width,settingsWindow.Height)){settingsWindow.DrawToBitmap(bitmap,new Rectangle(0,0,bitmap.Width,bitmap.Height));bitmap.Save(Path.Combine(path,"Settings.png"));}settingsWindow.Hide();
+            using(FloatingBar preview=new FloatingBar()){preview.SetState("Running · 37 / 600",GreenDot,"Pause · F8","Stop · F9",true);using(Bitmap bitmap=preview.Render())bitmap.Save(Path.Combine(path,"Status bar.png"));}
+            using(ScreenBadge preview=new ScreenBadge(false)){preview.SetText("2","Starting · F9 cancels");using(Bitmap bitmap=preview.Render())bitmap.Save(Path.Combine(path,"Countdown.png"));}}
         internal string[] LayoutDiagnostics(){List<string> lines=new List<string>();Action<Control,int> walk=null;walk=delegate(Control control,int depth){lines.Add(new string(' ',depth*2)+control.GetType().Name+" Text="+control.Text+" Bounds="+control.Bounds+" Visible="+control.Visible);foreach(Control child in control.Controls)walk(child,depth+1);};PerformLayout();walk(this,0);return lines.ToArray();}
         internal void TestEngine(Action<string,Action> check) {
             SelfTestMode=true;TestFocus=true;TestTime=0;List<Native.INPUT> sent=new List<Native.INPUT>();InputSink=sent.Add;
-            Action reset=delegate{StopAll("Test reset");sent.Clear();TestFocus=true;TestTime=0;boundTarget=null;lockTarget.Checked=false;preferences=new Preferences();modes.SelectedIndex=1;actionKey=70;interval.Value=100;hold.Value=30;repeats.Value=3;limit.Value=0;autoResume.Checked=true;TestRootAt=point=>IntPtr.Zero;TestElevated=null;};
+            Action reset=delegate{StopAll("Test reset");sent.Clear();TestFocus=true;TestTime=0;boundTarget=null;lockTarget.Checked=false;preferences=new Preferences();modes.SelectedIndex=1;actionKey=70;interval.Value=100;hold.Value=30;repeats.Value=3;limit.Value=0;autoResume.Checked=true;TestRootAt=point=>IntPtr.Zero;TestElevated=null;picking=PickKind.None;swallowPickUp=0;fixedPosition.Checked=false;mouse.SelectedIndex=0;LastNotice="";};
             Func<IntPtr,Native.POINT,int,int> mouseEvent=delegate(IntPtr buffer,Native.POINT point,int msg){Marshal.StructureToPtr(new Native.MOUSE{pt=point},buffer,false);MouseHook(0,new IntPtr(msg),buffer);return recorded.Count;};
             Action<int,int> keyEvent=delegate(int key,int msg){IntPtr buffer=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Native.KBD)));try{Marshal.StructureToPtr(new Native.KBD{vkCode=(uint)key},buffer,false);KeyboardHook(0,new IntPtr(msg),buffer);}finally{Marshal.FreeHGlobal(buffer);}};
             WindowChoice fakeTarget=new WindowChoice{Handle=new IntPtr(0x7A11),Process=uint.MaxValue-1,Title="Fake target"};
@@ -686,6 +880,100 @@ namespace AutoLoop {
             check("Settings save failure is shown",()=>{
                 reset();string previous=dataRoot;dataRoot=Path.Combine(previous,"missing-"+Guid.NewGuid().ToString("N"),"x");
                 try{if(SavePreferences()||status.Text!="Settings not saved")throw new Exception("Failure hidden");}finally{dataRoot=previous;}
+            });
+            Func<int,Native.POINT,IntPtr> rawMouse=delegate(int msg,Native.POINT point){IntPtr buffer=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Native.MOUSE)));try{Marshal.StructureToPtr(new Native.MOUSE{pt=point},buffer,false);return MouseHook(0,new IntPtr(msg),buffer);}finally{Marshal.FreeHGlobal(buffer);}};
+            check("Pick app selects the clicked window and swallows that click",()=>{
+                reset();IntPtr oldKeyboard=keyboardHook,oldMouse=mouseHook;keyboardHook=mouseHook=new IntPtr(1);
+                try{
+                    StartPick(PickKind.App);if(picking!=PickKind.App||BarText!="Click the app to use")throw new Exception("Pick mode not shown");
+                    TestRootAt=point=>Handle;
+                    if(rawMouse(0x201,new Native.POINT{X=5,Y=5})!=IntPtr.Zero||picking!=PickKind.None)throw new Exception("Click on Auto Loop should cancel and pass through");
+                    StartPick(PickKind.App);TestRootAt=point=>new IntPtr(0x5151);
+                    if(rawMouse(0x201,new Native.POINT{X=9,Y=9})==IntPtr.Zero)throw new Exception("Pick click reached the app");
+                    if(rawMouse(0x202,new Native.POINT{X=9,Y=9})==IntPtr.Zero)throw new Exception("Pick release reached the app");
+                    if(rawMouse(0x201,new Native.POINT{X=9,Y=9})!=IntPtr.Zero)throw new Exception("Later clicks are still swallowed");
+                    WindowChoice chosen=targets.SelectedItem as WindowChoice;
+                    if(chosen==null||chosen.Handle!=new IntPtr(0x5151)||!lockTarget.Checked)throw new Exception("Picked window not selected");
+                }finally{keyboardHook=oldKeyboard;mouseHook=oldMouse;targets.SelectedIndex=-1;lockTarget.Checked=false;RefreshWindows();}
+            });
+            check("Esc and right-click cancel picking without reaching the app",()=>{
+                reset();IntPtr oldKeyboard=keyboardHook,oldMouse=mouseHook;keyboardHook=mouseHook=new IntPtr(1);
+                try{
+                    StartPick(PickKind.App);IntPtr p=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Native.KBD)));
+                    try{Marshal.StructureToPtr(new Native.KBD{vkCode=27},p,false);if(KeyboardHook(0,new IntPtr(0x100),p)==IntPtr.Zero||picking!=PickKind.None)throw new Exception("Esc did not cancel");}finally{Marshal.FreeHGlobal(p);}
+                    StartPick(PickKind.Spot);TestRootAt=point=>new IntPtr(0x5151);
+                    if(rawMouse(0x204,new Native.POINT{X=1,Y=1})==IntPtr.Zero||picking!=PickKind.None||fixedPosition.Checked)throw new Exception("Right-click did not cancel");
+                    rawMouse(0x205,new Native.POINT{X=1,Y=1});if(swallowPickUp!=0)throw new Exception("Right release not consumed");
+                }finally{keyboardHook=oldKeyboard;mouseHook=oldMouse;}
+            });
+            check("Pick spot sets the fixed click position",()=>{
+                reset();IntPtr oldKeyboard=keyboardHook,oldMouse=mouseHook;keyboardHook=mouseHook=new IntPtr(1);
+                try{StartPick(PickKind.Spot);TestRootAt=point=>new IntPtr(0x5151);rawMouse(0x201,new Native.POINT{X=-640,Y=321});rawMouse(0x202,new Native.POINT{X=-640,Y=321});
+                    if(!fixedPosition.Checked||px.Value!=-640||py.Value!=321)throw new Exception("Spot not stored: "+px.Value+","+py.Value);}
+                finally{keyboardHook=oldKeyboard;mouseHook=oldMouse;fixedPosition.Checked=false;px.Value=0;py.Value=0;}
+            });
+            check("Picking needs the hooks and says so",()=>{
+                reset();IntPtr oldKeyboard=keyboardHook;keyboardHook=IntPtr.Zero;
+                try{StartPick(PickKind.App);if(picking!=PickKind.None||!LastMessage.Contains("list"))throw new Exception("Pick started without hooks");}finally{keyboardHook=oldKeyboard;}
+            });
+            check("Plain-language hints describe the settings",()=>{
+                reset();modes.SelectedIndex=0;interval.Value=100;
+                if(IntervalHintText()!="about 10 clicks per second")throw new Exception(IntervalHintText());
+                interval.Value=2500;if(IntervalHintText()!="1 click every "+2.5.ToString("0.#")+" seconds")throw new Exception(IntervalHintText());
+                modes.SelectedIndex=1;interval.Value=250;if(IntervalHintText()!="about 4 presses per second")throw new Exception(IntervalHintText());
+                modes.SelectedIndex=0;interval.Value=100;stopRule.SelectedIndex=1;stopValue.Value=60;
+                if(StopHintText()!="about 600 clicks, then stops")throw new Exception(StopHintText());
+                if(status.Text!="Ready · about 600 clicks, then stops")throw new Exception("Status hint missing: "+status.Text);
+                stopRule.SelectedIndex=0;stopValue.Value=1000;if(StopHintText()!="takes about 1 min 40 s")throw new Exception(StopHintText());
+                stopRule.SelectedIndex=2;if(StopHintText()!="runs until you press Stop")throw new Exception(StopHintText());
+                modes.SelectedIndex=2;recorded=new List<Step>{new Step{Kind="KeyDown",Code=70},new Step{Kind="KeyUp",Code=70,Delay=1000}};stopRule.SelectedIndex=0;stopValue.Value=10;
+                if(StopHintText()!="about 10 seconds in total")throw new Exception(StopHintText());
+                recorded=new List<Step>();stopRule.SelectedIndex=0;stopValue.Value=3;
+            });
+            check("Status bar shows progress, pause and recording state",()=>{
+                reset();BeginPlayback();TickEngine();if(BarText!="Running · 0 / 3")throw new Exception(BarText);
+                TogglePause();TickEngine();if(BarText!="Paused · by you")throw new Exception(BarText);StopAll("Done");
+                BeginPlayback();TickEngine();TestFocus=false;TestTime=10;TickEngine();UpdateChrome();
+                if(!BarText.StartsWith("Paused · ")||userPaused)throw new Exception("Focus pause shown wrong: "+BarText);TestFocus=true;StopAll("Done");if(BarText!="")throw new Exception("Bar left visible: "+BarText);
+                BeginRecording();TickEngine();if(!BarText.StartsWith("Recording · "))throw new Exception(BarText);FinishRecording();UpdateChrome();
+                if(BarText!=""||TrayWanted)throw new Exception("Chrome left visible after recording");
+            });
+            check("Countdown text and tray follow the countdown",()=>{
+                reset();stopHotkeyRegistered=true;WindowState=FormWindowState.Normal;modes.SelectedIndex=1;StartCountdown(false);UpdateChrome();
+                try{if(CountdownText!="3"||!TrayWanted)throw new Exception("Countdown="+CountdownText+" tray="+TrayWanted);}finally{StopAll("Done");WindowState=FormWindowState.Normal;}
+                if(CountdownText!="")throw new Exception("Countdown left visible");
+            });
+            check("Finished notice describes the run; Test once stays quiet",()=>{
+                reset();modes.SelectedIndex=0;repeats.Value=2;BeginPlayback();TickEngine();TestTime=30;TickEngine();TestTime=100;TickEngine();TestTime=130;TickEngine();TestTime=200;TickEngine();
+                if(running||LastNotice!="2 clicks in 0:01. F6 runs it again.")throw new Exception("Notice: "+LastNotice);
+                reset();modes.SelectedIndex=1;BeginPlayback(true);TickEngine();TestTime=30;TickEngine();TestTime=100;TickEngine();if(running||LastNotice!="")throw new Exception("Test once notified");
+                reset();BeginPlayback();TickEngine();StopAll("Stopped");if(LastNotice!="")throw new Exception("Manual stop notified");
+            });
+            check("Last settings are remembered and bad ones ignored",()=>{
+                reset();interval.Value=250;modes.SelectedIndex=0;mouse.SelectedIndex=1;stopRule.SelectedIndex=1;stopValue.Value=45;
+                string previous=dataRoot;string folder=Path.Combine(Path.GetTempPath(),"autoloop-test-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);dataRoot=folder;bool wasIsolated=Isolated;Isolated=false;
+                try{
+                    preferences.Hotkeys[0]=(int)(Keys.Control|Keys.F6);if(!SavePreferences())throw new Exception("Save failed");
+                    reset();preferences=new Preferences();LoadPreferences();if(preferences.Hotkeys[0]!=(int)(Keys.Control|Keys.F6)||preferences.Last==null)throw new Exception("Settings not read back");
+                    RestoreLastSettings();if(interval.Value!=250||modes.SelectedIndex!=0||mouse.SelectedIndex!=1||limit.Value!=45||repeats.Value!=0||!status.Text.Contains("last time"))throw new Exception("Settings not restored");
+                    preferences.Last=new Routine{Interval=1};RestoreLastSettings();if(interval.Value!=250)throw new Exception("Invalid saved settings applied");
+                }finally{dataRoot=previous;Isolated=wasIsolated;try{Directory.Delete(folder,true);}catch{}}
+            });
+            check("Overlays never take focus; countdown and spot dot let clicks through",()=>{
+                IntPtr before=Native.GetForegroundWindow();
+                using(FloatingBar testBar=new FloatingBar())using(ScreenBadge badge=new ScreenBadge(false))using(ScreenBadge dot=new ScreenBadge(true)){
+                    testBar.SetState("Running · 1 / 2",GreenDot,"Pause · F8","Stop · F9",true);testBar.PlaceNear(Cursor.Position);testBar.Show();
+                    badge.SetText("3","Starting");badge.ShowCentered(Cursor.Position);dot.ShowAt(new Point(badge.Left+badge.Width/2,badge.Top+badge.Height/2-UiScale.Px(40)));Application.DoEvents();
+                    IntPtr now=Native.GetForegroundWindow();
+                    if(now==testBar.Handle||now==badge.Handle||now==dot.Handle||(before!=IntPtr.Zero&&now!=before))throw new Exception("An overlay became the active window");
+                    Native.POINT barPoint=new Native.POINT{X=testBar.Left+testBar.Width/2,Y=testBar.Top+testBar.Height/2};
+                    if(Native.GetAncestor(Native.WindowFromPoint(barPoint),Native.RootWindow)!=testBar.Handle)throw new Exception("Status bar cannot be clicked");
+                    Native.POINT badgePoint=new Native.POINT{X=badge.Left+badge.Width/2,Y=badge.Top+badge.Height/2};
+                    if(Native.GetAncestor(Native.WindowFromPoint(badgePoint),Native.RootWindow)==badge.Handle)throw new Exception("Countdown blocks clicks");
+                    Native.POINT dotPoint=new Native.POINT{X=dot.Left+dot.Width/2,Y=dot.Top+dot.Height/2};
+                    if(Native.GetAncestor(Native.WindowFromPoint(dotPoint),Native.RootWindow)==dot.Handle)throw new Exception("Spot dot blocks clicks");
+                    int oldTop=testBar.Top;testBar.MoveAway();if(testBar.Top==oldTop)throw new Exception("Status bar did not move away");
+                }
             });
             check("File version matches product version",()=>{
                 var info=FileVersionInfo.GetVersionInfo(System.Reflection.Assembly.GetExecutingAssembly().Location);
@@ -783,6 +1071,7 @@ namespace AutoLoop {
         [STAThread] static void Main(string[] args) {
             Native.EnableDpiAwareness();UiScale.Init();Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
             float previewScale;
+            MainForm.Isolated=args.Length>0&&(args[0]=="--preview"||args[0]=="--verify-routine"||args[0]=="--self-test");
             if(args.Length==3&&args[0]=="--preview"&&float.TryParse(args[2],System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out previewScale)&&previewScale>=1f&&previewScale<=3f){UiScale.Simulated=previewScale;using(MainForm form=new MainForm()){form.SelfTestMode=true;form.SavePreviews(args[1]);}return;}
             if(args.Length==3&&args[0]=="--verify-routine"){using(MainForm form=new MainForm()){form.SelfTestMode=true;form.VerifyRoutine(args[1],args[2]);}return;}
             if(args.Length==2&&args[0]=="--self-test"){using(MainForm testForm=new MainForm()){testForm.SelfTestMode=true;testForm.RunInternalTests(args[1]);}return;}

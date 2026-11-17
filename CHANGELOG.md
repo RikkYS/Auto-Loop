@@ -1,6 +1,23 @@
 # Changelog
 
-## 0.6.1 (unreleased)
+## 0.7.0 (2026-11-17)
+
+Easier to use, with the same window size and layout.
+
+### Added
+- **Pick app**: press it and click the window Auto Loop should use. The list of open windows is still next to it, and now refreshes by itself when opened.
+- **Pick spot** (Settings) replaces "Pick in 3s": click the spot to click on, and a small dot marks it.
+- **Floating status bar** while playing or recording: progress, Pause and Stop (Finish while recording). It never takes focus, can be dragged, and moves out of the way if a playback click would land on it.
+- **Big 3-2-1 countdown** in the middle of the screen before playback or recording starts. Clicks pass through it.
+- **Tray icon** while running, with Pause, Stop and Show Auto Loop, and a Windows notice when a run finishes on its own.
+- **Plain-language hints**: "about 10 clicks per second" under the interval; the status line describes the Stop after rule, for example "about 600 clicks, then stops".
+- **Remembers your settings** between launches, including the selected app if it's still open.
+
+### Changed
+- The refresh button next to the app list is gone; the list refreshes each time you open it.
+- 69 built-in checks (up from 59), including one that shows the overlays on screen and confirms they never take focus.
+
+## 0.6.1 (2026-11-17)
 
 ### Fixed
 - Finishing a recording by clicking Auto Loop's **Record** or **Stop** button no longer records that click. Before, playback would click whatever sat under that spot.

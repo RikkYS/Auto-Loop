@@ -9,13 +9,27 @@ This guide walks through each part of Auto Loop. For download and install steps,
 | ![Click tab](click.png) | ![Keys tab](keys.png) |
 
 1. Choose **Click** and pick a mouse button, or choose **Keys**, click the key field and press the key to repeat.
-2. Set the **Interval**. `100 ms` is about ten presses per second; the shortest interval is 10 ms.
-3. Choose **Stop after**: a number of repeats, a number of seconds, or **Until stopped**. Time spent paused doesn't count toward the seconds.
-4. Choose **Any app**, or **Selected app** and the window to use.
-5. Press **Start**. Auto Loop minimizes; switch to your app during the three-second countdown.
-6. Press **F9** to stop.
+2. Set the **Interval**. The line under it says what it means, for example "about 10 clicks per second". The shortest interval is 10 ms.
+3. Choose **Stop after**: a number of repeats, a number of seconds, or **Until stopped**. The status line at the bottom says what will happen, for example "Ready · about 600 clicks, then stops". Time spent paused doesn't count toward the seconds.
+4. Choose **Any app**, or **Selected app** and the app to use (see below).
+5. Press **Start**. Auto Loop minimizes and a big 3-2-1 countdown appears in the middle of the screen; switch to your app before it reaches zero.
+6. Press **F9**, or **Stop** on the status bar, to stop.
 
-By default a click happens wherever the pointer is. To always click the same spot, open **Settings**, turn on **Always click at the same screen position**, and type the X and Y coordinates or use **Pick in 3s** and hold the pointer over the spot.
+By default a click happens wherever the pointer is. To always click the same spot, open **Settings**, press **Pick spot**, and click the spot on screen. A small green dot briefly marks it. You can also type the X and Y coordinates. Turn off **Always click at the same screen position** to click at the pointer again.
+
+### Choosing the app
+
+With **Selected app**, press **Pick app** and click anywhere in the window you want. That click only chooses the window; it isn't passed on to the app. Press **Esc** or right-click to cancel. You can also open the list next to **Pick app** and choose from the open windows; the list refreshes each time you open it.
+
+![Selected app with Pick app and the list](selected-app.png)
+
+### While it runs
+
+- A **status bar** at the top of the screen shows progress (for example "Running · 37 / 600") with **Pause** and **Stop**. It turns red with **Finish** while recording. Drag it if it's in your way; during playback it moves to the bottom edge by itself if a click would land on it.
+- An **Auto Loop icon** sits next to the clock. Right-click it for Pause, Stop or Show Auto Loop.
+- When a run finishes on its own (or the selected app closes), a Windows notice says so, for example "600 clicks in 1:00".
+
+![Status bar](status-bar.png)
 
 **Press duration** in Settings is how long each click or key is held down (30 ms by default). It must not be longer than the interval.
 
@@ -25,7 +39,7 @@ By default a click happens wherever the pointer is. To always click the same spo
 
 1. Choose **Record**, then press **F7**.
 2. Switch to the app you want to record during the three-second countdown.
-3. Do your actions, then press **F7** again (or **F9**) to finish.
+3. Do your actions, then press **F7** again (or **F9**, or **Finish** on the status bar) to finish.
 4. Press **Test once** to play one pass. It ignores your Stop after setting without changing it.
 5. Press **Start** to play using your Stop after setting.
 6. Press **Save** to keep the recording, or **Open** to load one.
@@ -38,7 +52,7 @@ What gets recorded:
 
 What doesn't get recorded:
 
-- Anything you do in Auto Loop's own window, including clicking its Record or Stop button.
+- Anything you do in Auto Loop's own windows, including its Record or Stop button and the status bar.
 - Your Start, Record, Pause and Stop shortcuts.
 - In **Selected app** mode, presses and scrolls outside the selected app.
 - The keys or click that switched you away from the app (for example Alt+Tab, the Windows key, or a taskbar click). Replaying them would only make playback pause itself.
@@ -62,7 +76,7 @@ Click a shortcut in **Settings** and press the new key or key combination. If an
 
 ## Why playback pauses
 
-Hover over the status line at the bottom for details.
+The status bar at the top of the screen shows the reason; hover over the status line in the main window for more detail.
 
 - **Paused: selected app is not active**: return to that window. With **Resume when I return** off, press Pause to continue.
 - **Paused: Auto Loop is active**: minimize Auto Loop and go back to the app you are automating.
@@ -74,4 +88,4 @@ Every held key and mouse button is released when playback pauses or stops. A rep
 
 ## Files
 
-Auto Loop keeps `settings.xml` and the `Routines` folder next to `Auto Loop.exe`. If Windows doesn't let it write there, the status line says **Settings not saved**. Move Auto Loop to a folder you own, such as one in Documents. Copy those files along if you move Auto Loop.
+Auto Loop keeps `settings.xml` and the `Routines` folder next to `Auto Loop.exe`. `settings.xml` holds your shortcuts and the settings you used last, so Auto Loop opens the way you left it (recordings are only kept when you save them). If Windows doesn't let it write there, the status line says **Settings not saved**. Move Auto Loop to a folder you own, such as one in Documents. Copy those files along if you move Auto Loop.

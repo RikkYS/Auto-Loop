@@ -15,6 +15,16 @@ PASS Playback pauses instead of clicking outside the selected app
 PASS Fixed-position click checks the moved-to point, not the stale cursor
 PASS Administrator target is rejected with an explanation
 PASS Settings save failure is shown
+PASS Pick app selects the clicked window and swallows that click
+PASS Esc and right-click cancel picking without reaching the app
+PASS Pick spot sets the fixed click position
+PASS Picking needs the hooks and says so
+PASS Plain-language hints describe the settings
+PASS Status bar shows progress, pause and recording state
+PASS Countdown text and tray follow the countdown
+PASS Finished notice describes the run; Test once stays quiet
+PASS Last settings are remembered and bad ones ignored
+PASS Overlays never take focus; countdown and spot dot let clicks through
 PASS File version matches product version
 PASS Engine repeats exactly and respects interval
 PASS Stop releases a held key

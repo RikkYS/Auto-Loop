@@ -1,8 +1,9 @@
-AUTO LOOP 0.6.1 — TEST SCOPE
+AUTO LOOP 0.7.0 — TEST SCOPE
 
 Run the built-in checks with:  "Auto Loop.exe" --self-test <empty folder>
-Results are written to internal-tests.txt in that folder. 59 checks pass; the
-current list is in AUTOMATED-TEST-RESULTS.txt.
+Results are written to internal-tests.txt in that folder. 69 checks pass; the
+current list is in AUTOMATED-TEST-RESULTS.txt. Self-tests and previews never
+read or change your settings.xml.
 
 WHAT THE CHECKS COVER
 - Input encoding: INPUT structure size, key and mouse flags, virtual-desktop
@@ -17,23 +18,42 @@ WHAT THE CHECKS COVER
   administrator targets are refused with an explanation.
 - Recording: physical vs injected events, press/release pairs, drags,
   double-clicks, held keys at the end of a recording, the step limit, clicks on
-  Auto Loop's own window being ignored, presses outside the selected app being
+  Auto Loop's own windows being ignored, presses outside the selected app being
   ignored, and the keys or clicks that switch away from the app being trimmed.
-- Files: routine and settings round trip, validation of invalid or unbalanced
-  routines, and a visible message when settings can't be saved.
-- Layout: control sizes, alignment and clipping at 100% scaling.
+- Pick app / Pick spot: the picked window or spot is used, the picking click
+  and its release never reach the app, Esc and right-click cancel, a click on
+  Auto Loop cancels, and picking explains itself if the hooks are missing.
+- Status bar, countdown, tray and notice: the text for running, paused,
+  waiting and recording; the countdown and tray follow the countdown; the
+  "finished" notice text, and no notice for Test once or a manual Stop.
+- Overlays on screen: the status bar, countdown and spot dot are really shown;
+  none becomes the active window, the countdown and dot let clicks through,
+  the bar can be clicked and moves out of the way.
+- Hints: interval and Stop after descriptions for Click, Keys and Record.
+- Files: routine and settings round trip, remembered settings restored on the
+  next start, invalid saved settings ignored, validation of invalid or
+  unbalanced routines, and a visible message when settings can't be saved.
+- Layout: control sizes, alignment and clipping at 100% scaling; the window is
+  the same size as in 0.6.
 
 Engine and recorder checks use a simulated clock and simulated hook events.
 They send no input to the desktop.
 
+LIVE CHECK
+The built app was started, closed and started again: it showed one window
+when idle (no status bar or tray icon), the interval hint, and "settings from
+last time" on the second start.
+
 DISPLAY SCALING
-"Auto Loop.exe" --preview <folder> <scale> renders every view at a given
-scale. Renders at 1, 1.25, 1.5 and 2 were checked by eye for clipping; at 1
-they match the 0.6.0 screenshots pixel for pixel. This simulates scaling on a
-100% display. It has not been tried on real 150%/200% or mixed-DPI hardware.
+"Auto Loop.exe" --preview <folder> <scale> renders every view, the status bar
+and the countdown at a given scale. Renders at 1 and 1.5 were checked by eye.
+This simulates scaling on a 100% display; it has not been tried on real
+150%/200% or mixed-DPI hardware.
 
 NOT VERIFIED
 - Live playback into real applications on other computers.
+- How the "finished" notice looks with Windows notifications or Focus Assist
+  turned off (Windows may hide it).
 - Games, apps with anti-cheat, and remote-desktop sessions.
 - Real mixed-DPI multi-monitor setups.
 - Detection of administrator apps that Windows doesn't let normal apps query
