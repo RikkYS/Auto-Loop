@@ -1,29 +1,6 @@
-# Auto Loop
+# Auto Loop user guide
 
-A small portable Windows app for repeated mouse clicks, repeated keys, and recording/replaying actions—without writing scripts.
-
-**Early release · Windows x64 · No installer**
-
-[Download portable ZIP](https://github.com/RikkYS/Auto-Loop/releases/download/v0.6.0/Auto-Loop-0.6.0-Portable.zip) · [Download EXE](https://github.com/RikkYS/Auto-Loop/releases/download/v0.6.0/Auto-Loop-0.6.0.exe)
-
-## What it does
-
-- **Click:** repeat left, right, or middle clicks.
-- **Keys:** click the key field and press the key you want to repeat.
-- **Record:** record mouse movement, clicks, scrolling, and keyboard actions, then replay them.
-- Run in **Any app**, or restrict input to a **Selected app**.
-- Stop after a repeat count, a duration, or when you press Stop.
-- Save recordings and customize the shortcuts.
-
-## Run it
-
-Requires **64-bit Windows and .NET Framework 4.x**.
-
-1. Download the [portable ZIP](https://github.com/RikkYS/Auto-Loop/releases/download/v0.6.0/Auto-Loop-0.6.0-Portable.zip) from [Releases](https://github.com/RikkYS/Auto-Loop/releases).
-2. Extract it into a folder you can write to.
-3. Open **Auto Loop.exe**. No installer or source files are needed.
-
-Auto Loop creates its settings and saved routines beside the EXE. If you move it later, keep any recordings and settings you want to preserve.
+This guide walks through each part of Auto Loop. For download and install steps, see the [README](README.md).
 
 ## Click or repeat a key
 
@@ -31,12 +8,16 @@ Auto Loop creates its settings and saved routines beside the EXE. If you move it
 |---|---|
 | ![Click tab](click.png) | ![Keys tab](keys.png) |
 
-1. Choose **Click** or **Keys** and select the mouse button or key.
-2. Set the **Interval**. `100 ms` is approximately ten presses per second.
-3. Choose **Stop after**: repeats, seconds, or Until stopped.
-4. Choose **Any app**, or **Selected app** and a window.
-5. Press **Start**. Auto Loop minimizes automatically; switch to your app during the three-second countdown.
+1. Choose **Click** and pick a mouse button, or choose **Keys**, click the key field and press the key to repeat.
+2. Set the **Interval**. `100 ms` is about ten presses per second; the shortest interval is 10 ms.
+3. Choose **Stop after**: a number of repeats, a number of seconds, or **Until stopped**. Time spent paused doesn't count toward the seconds.
+4. Choose **Any app**, or **Selected app** and the window to use.
+5. Press **Start**. Auto Loop minimizes; switch to your app during the three-second countdown.
 6. Press **F9** to stop.
+
+By default a click happens wherever the pointer is. To always click the same spot, open **Settings**, turn on **Always click at the same screen position**, and type the X and Y coordinates or use **Pick in 3s** and hold the pointer over the spot.
+
+**Press duration** in Settings is how long each click or key is held down (30 ms by default). It must not be longer than the interval.
 
 ## Record and replay
 
@@ -44,16 +25,27 @@ Auto Loop creates its settings and saved routines beside the EXE. If you move it
 
 1. Choose **Record**, then press **F7**.
 2. Switch to the app you want to record during the three-second countdown.
-3. Perform your actions, then press **F7** again or **F9** to finish.
-4. Choose **Test once** to play one pass before looping. This does not change your repeat or time settings.
-5. Choose **Start** to play using your Stop after settings.
-6. Use **Save** to keep the recording, or **Open** to load one later.
+3. Do your actions, then press **F7** again (or **F9**) to finish.
+4. Press **Test once** to play one pass. It ignores your Stop after setting without changing it.
+5. Press **Start** to play using your Stop after setting.
+6. Press **Save** to keep the recording, or **Open** to load one.
 
-The four rows in the screenshot are an example, not a four-step limit. Mouse press and release are separate events so holds and drags can be replayed. The time on the right is the delay **before** that event.
+What gets recorded:
 
-**Clear** empties the in-memory recording. Right-click a step to change its delay or remove it. A broken press/release pair is rejected before playback.
+- Mouse moves, button presses and releases (so holds and drags replay correctly), and scrolling.
+- Keys, as separate press and release steps, so key combinations replay correctly.
+- The number on the right of each step is the delay **before** that step.
 
-Keep window positions, screen arrangement, and display scaling consistent. Auto Loop replays screen positions; it does not recognize buttons or automatically wait for files to load.
+What doesn't get recorded:
+
+- Anything you do in Auto Loop's own window, including clicking its Record or Stop button.
+- Your Start, Record, Pause and Stop shortcuts.
+- In **Selected app** mode, presses and scrolls outside the selected app.
+- The keys or click that switched you away from the app (for example Alt+Tab, the Windows key, or a taskbar click). Replaying them would only make playback pause itself.
+
+Right-click a step to change its delay or remove it. If removing a step leaves a press without its release, Auto Loop explains the problem before playback. **Clear** empties the recording after asking you to confirm, and starting a new recording asks before replacing the current one.
+
+Recordings replay **screen positions**. Auto Loop doesn't recognize buttons or wait for windows to load, so keep the window in the same place and add longer delays where the app needs time.
 
 ## Shortcuts and settings
 
@@ -66,34 +58,20 @@ Keep window positions, screen arrangement, and display scaling consistent. Auto 
 
 ![Settings](settings.png)
 
-Use **Settings** to change shortcuts, press duration, or fixed click position. If a shortcut is already reserved by another app, check the labels for the active binding; Auto Loop may use Ctrl+Alt variants.
+Click a shortcut in **Settings** and press the new key or key combination. If another app already uses the default function keys, Auto Loop switches to Ctrl+Alt+F6–F9 and shows the active keys on its buttons. Playback can't start until a global Stop shortcut works.
 
 ## Why playback pauses
 
-- **Selected app is not active:** return to that window. If automatic resume is off, press Pause to resume.
-- **Auto Loop is active:** minimize its window and return to the app being automated.
-- **Paused by you:** press Pause again to continue.
+Hover over the status line at the bottom for details.
 
-Hover over the status for more detail. Input is released when playback stops or loses its selected target. Interrupted repetitions restart from the beginning when resumed. Closing the selected window stops the routine.
+- **Paused: selected app is not active**: return to that window. With **Resume when I return** off, press Pause to continue.
+- **Paused: Auto Loop is active**: minimize Auto Loop and go back to the app you are automating.
+- **Paused: pointer is outside the selected app**: the next click would have landed in a different window. Move the window or pointer back and press Pause to continue.
+- **Paused: the active app runs as administrator**: Windows blocks input to it from a normal app. Switch to another app, or run Auto Loop as administrator.
+- **Paused by you**: press Pause again to continue.
 
-With **Any app**, no window selection is required, and input follows whichever app is active. Auto Loop avoids sending playback into its own windows.
+Every held key and mouse button is released when playback pauses or stops. A repetition that was interrupted starts again from its first step. Closing the selected window stops playback.
 
-## Current testing and limits
+## Files
 
-This is an early release. **46 automated checks pass.** The supplied recording also completed ten engine-simulated loops with matching mouse presses and releases and no held inputs left behind.
-
-A live sample-file test was attempted, but Windows blocked simulated input in the test session. The user's exact desktop open/close routine is therefore **not verified on screen** in this release. See [TESTING.txt](TESTING.txt) for the test scope.
-
-Some applications reject simulated input, and Windows can block input to applications with higher permissions. Game compatibility is unverified; check the game's automation rules before use. Background playback and image recognition are not included. The EXE is unsigned.
-
-The app has no accounts, telemetry, or network features.
-
-## Feedback
-
-When reporting a problem, include the selected mode, Any app/Selected app setting, active shortcut, what you expected, and what happened. If sharing a recording, check it first for personal text and screen positions you do not want to publish.
-
-## Build from source
-
-Run the included build.ps1 on Windows with the 64-bit .NET Framework compiler installed. It creates Auto Loop.exe in the project root. Source includes the built-in automated checks; run the EXE with --self-test followed by an existing output folder to run them.
-
-
+Auto Loop keeps `settings.xml` and the `Routines` folder next to `Auto Loop.exe`. If Windows doesn't let it write there, the status line says **Settings not saved**. Move Auto Loop to a folder you own, such as one in Documents. Copy those files along if you move Auto Loop.

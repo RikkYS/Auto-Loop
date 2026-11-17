@@ -12,8 +12,8 @@ using System.Xml.Serialization;
 
 [assembly: System.Reflection.AssemblyTitle("Auto Loop")]
 [assembly: System.Reflection.AssemblyProduct("Auto Loop")]
-[assembly: System.Reflection.AssemblyVersion("0.6.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.4.2.0")]
+[assembly: System.Reflection.AssemblyVersion("0.6.1.0")]
+[assembly: System.Reflection.AssemblyFileVersion("0.6.1.0")]
 namespace AutoLoop {
     public class Step {
         public string Kind = "Wait";
@@ -66,6 +66,31 @@ namespace AutoLoop {
         [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
         [DllImport("user32.dll")] public static extern bool ReleaseCapture();
         [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr window,int message,IntPtr wParam,IntPtr lParam);
+        [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
+        [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT point);
+        [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr window, uint flags);
+        [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+        [DllImport("shcore.dll")] static extern int SetProcessDpiAwareness(int value);
+        [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint process);
+        [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+        [DllImport("advapi32.dll", SetLastError=true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+        [DllImport("advapi32.dll", SetLastError=true)] static extern bool GetTokenInformation(IntPtr token, int infoClass, out int info, int length, out int returned);
+        public const uint RootWindow=2, RootOwner=3;
+        // Per-monitor awareness keeps hook coordinates, cursor positions and SendInput on the same physical pixel grid on mixed-DPI desktops.
+        public static void EnableDpiAwareness() {
+            try { if(SetProcessDpiAwarenessContext(new IntPtr(-4))) return; } catch(EntryPointNotFoundException) {}
+            try { if(SetProcessDpiAwareness(2)==0) return; } catch(DllNotFoundException) {} catch(EntryPointNotFoundException) {}
+            SetProcessDPIAware();
+        }
+        // Returns null when Windows does not allow the elevation state to be read.
+        public static bool? IsElevated(uint processId) {
+            IntPtr process=OpenProcess(0x1000,false,processId); if(process==IntPtr.Zero) return null;
+            try {
+                IntPtr token; if(!OpenProcessToken(process,8,out token)) return null;
+                try { int elevated,returned; if(!GetTokenInformation(token,20,out elevated,4,out returned)) return null; return elevated!=0; }
+                finally { CloseHandle(token); }
+            } finally { CloseHandle(process); }
+        }
         public static string Title(IntPtr window) { StringBuilder s = new StringBuilder(512); GetWindowText(window,s,s.Capacity); return s.ToString(); }
         public static uint ProcessId(IntPtr window) { uint p; GetWindowThreadProcessId(window,out p); return p; }
         public static bool Extended(int key) { return (MapVirtualKey((uint)key,4) & 0xFF00) != 0; }
@@ -118,7 +143,7 @@ namespace AutoLoop {
         public bool BorderVisible=true;
         public DarkComboBox(){SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);}
         protected override void OnSelectedIndexChanged(EventArgs e){base.OnSelectedIndexChanged(e);Invalidate();}
-        protected override void OnPaint(PaintEventArgs e){using(Brush background=new SolidBrush(Parent==null?BackColor:Parent.BackColor))e.Graphics.FillRectangle(background,ClientRectangle);UiDrawing.Face(e.Graphics,new Rectangle(0,0,Width-1,Height-1),BackColor,BorderVisible?Color.FromArgb(50,67,84):Color.Empty,6);string caption=SelectedIndex<0?"Choose app":GetItemText(SelectedItem);TextRenderer.DrawText(e.Graphics,caption,Font,new Rectangle(9,0,Math.Max(0,Width-35),Height),Enabled?ForeColor:Color.FromArgb(120,135,150),TextFormatFlags.Left|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;using(Pen pen=new Pen(Enabled?Color.FromArgb(187,202,217):Color.FromArgb(95,105,118),1.5f)){int x=Width-13,y=Height/2;e.Graphics.DrawLines(pen,new Point[]{new Point(x-4,y-2),new Point(x,y+2),new Point(x+4,y-2)});}}
+        protected override void OnPaint(PaintEventArgs e){using(Brush background=new SolidBrush(Parent==null?BackColor:Parent.BackColor))e.Graphics.FillRectangle(background,ClientRectangle);UiDrawing.Face(e.Graphics,new Rectangle(0,0,Width-1,Height-1),BackColor,BorderVisible?Color.FromArgb(50,67,84):Color.Empty,6);string caption=SelectedIndex<0?"Choose app":GetItemText(SelectedItem);TextRenderer.DrawText(e.Graphics,caption,Font,new Rectangle(UiScale.Px(9),0,Math.Max(0,Width-UiScale.Px(35)),Height),Enabled?ForeColor:Color.FromArgb(120,135,150),TextFormatFlags.Left|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;float u=UiScale.Layout;e.Graphics.TranslateTransform(Width-UiScale.Px(13),Height/2);e.Graphics.ScaleTransform(u,u);using(Pen pen=new Pen(Enabled?Color.FromArgb(187,202,217):Color.FromArgb(95,105,118),1.5f)){e.Graphics.DrawLines(pen,new Point[]{new Point(-4,-2),new Point(0,2),new Point(4,-2)});}e.Graphics.ResetTransform();}
     }
     internal class ActionButton : Button {
         public string Symbol=""; public Color SymbolColor=Color.Empty;
@@ -130,8 +155,9 @@ namespace AutoLoop {
             float actionScale=Height/118f;e.Graphics.ScaleTransform(actionScale,actionScale);float contentWidth=Width/actionScale;
             string[] parts=Text.Split('\u00B7');StringFormat center=new StringFormat{Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center};
             float cx=contentWidth/2f,cy=33;using(Brush icon=new SolidBrush(SymbolColor.IsEmpty?ForeColor:SymbolColor)){if(parts[0].Trim()=="Start")e.Graphics.FillPolygon(icon,new PointF[]{new PointF(cx-11,cy-15),new PointF(cx+15,cy),new PointF(cx-11,cy+15)});else if(parts[0].Trim()=="Record")e.Graphics.FillEllipse(icon,cx-13,cy-13,26,26);else if(parts[0].Trim()=="Pause"){e.Graphics.FillRectangle(icon,cx-10,cy-13,7,26);e.Graphics.FillRectangle(icon,cx+3,cy-13,7,26);}else if(parts[0].Trim()=="Stop")e.Graphics.FillRectangle(icon,cx-12,cy-12,24,24);else{PointF[] teeth=new PointF[64];for(int i=0;i<64;i++){double angle=i*Math.PI*2/64;double radius=i%8<2||i%8>5?14:10;teeth[i]=new PointF(cx+(float)(Math.Cos(angle)*radius),cy+(float)(Math.Sin(angle)*radius));}e.Graphics.FillPolygon(icon,teeth);using(Brush hole=new SolidBrush(BackColor))e.Graphics.FillEllipse(hole,cx-6,cy-6,12,12);}}
-            using(Font label=new Font("Segoe UI",14,FontStyle.Regular))using(Brush b=new SolidBrush(ForeColor))e.Graphics.DrawString(parts[0].Trim(),label,b,new RectangleF(0,62,contentWidth,26),center);
-            using(Font shortcut=new Font("Segoe UI",12))using(Brush b=new SolidBrush(Color.FromArgb(166,185,202)))e.Graphics.DrawString(parts.Length>1?parts[1].Trim():"",shortcut,b,new RectangleF(0,91,contentWidth,22),center);center.Dispose();
+            // Pixel-unit fonts: the transform above already scales with the button, so point sizes would grow twice at high DPI.
+            using(Font label=new Font("Segoe UI",14*96f/72f,FontStyle.Regular,GraphicsUnit.Pixel))using(Brush b=new SolidBrush(ForeColor))e.Graphics.DrawString(parts[0].Trim(),label,b,new RectangleF(0,62,contentWidth,26),center);
+            using(Font shortcut=new Font("Segoe UI",12*96f/72f,GraphicsUnit.Pixel))using(Brush b=new SolidBrush(Color.FromArgb(166,185,202)))e.Graphics.DrawString(parts.Length>1?parts[1].Trim():"",shortcut,b,new RectangleF(0,91,contentWidth,22),center);center.Dispose();
         }
     }
     public class MainForm : Form {
@@ -149,6 +175,11 @@ namespace AutoLoop {
         long countdownUntil; WindowChoice boundTarget; IntPtr keyboardHook, mouseHook; Native.Hook keyboardProc, mouseProc;
         string dataRoot; public bool SelfTestMode; public string LastMessage="Ready";
         internal bool? TestFocus; internal long? TestTime; internal Action<Native.INPUT> InputSink;
+        internal Func<Native.POINT,IntPtr> TestRootAt; internal Func<uint,bool> TestElevated;
+        readonly uint ownProcess=(uint)Process.GetCurrentProcess().Id;
+        readonly Dictionary<uint,bool> elevationCache=new Dictionary<uint,bool>(); bool? selfElevated;
+        // Input that happens this close to a focus change is treated as the action that caused it.
+        const int FocusSwitchWindowMs=250;
         public static string KeyName(int key) { return new KeysConverter().ConvertToString((Keys)key); }
         public static bool IsModifier(int k) { return k==16||k==17||k==18||k==91||k==92||k==160||k==161||k==162||k==163||k==164||k==165; }
         protected override void OnResize(EventArgs e){base.OnResize(e);if(FormBorderStyle==FormBorderStyle.None&&Width>30&&Height>30)using(var path=UiDrawing.Round(new Rectangle(0,0,Width,Height),10)){Region old=Region;Region=new Region(path);if(old!=null)old.Dispose();}}
@@ -187,7 +218,9 @@ namespace AutoLoop {
         void SyncStopValues(){if(syncingStop)return;syncingStop=true;try{if(stopRule.SelectedIndex==0){repeats.Value=stopValue.Value;limit.Value=0;}else if(stopRule.SelectedIndex==1){repeats.Value=0;limit.Value=stopValue.Value;}else if(stopRule.SelectedIndex==2){repeats.Value=0;limit.Value=0;}}finally{syncingStop=false;}}
         void SetStopMode(){if(syncingStop)return;syncingStop=true;try{if(stopRule.SelectedIndex<3)while(stopRule.Items.Count>3)stopRule.Items.RemoveAt(3);stopValue.Maximum=stopRule.SelectedIndex==1?86400:1000000;stopValue.Visible=stopRule.SelectedIndex<2;if(stopRule.SelectedIndex==1)stopValue.Value=Math.Max(1,limit.Value);else if(stopRule.SelectedIndex==0)stopValue.Value=Math.Max(1,repeats.Value);}finally{syncingStop=false;}UpdateStopLayout();SyncStopValues();}
         void SyncStopDisplay(){syncingStop=true;try{while(stopRule.Items.Count>3)stopRule.Items.RemoveAt(3);if(repeats.Value>0&&limit.Value>0){stopRule.Items.Add(repeats.Value+" repeats or "+limit.Value+" seconds");stopRule.SelectedIndex=3;stopValue.Visible=false;}else if(limit.Value>0){stopRule.SelectedIndex=1;stopValue.Maximum=86400;stopValue.Value=limit.Value;stopValue.Visible=true;}else if(repeats.Value>0){stopRule.SelectedIndex=0;stopValue.Maximum=1000000;stopValue.Value=repeats.Value;stopValue.Visible=true;}else{stopRule.SelectedIndex=2;stopValue.Visible=false;}}finally{syncingStop=false;}UpdateStopLayout();}
-        void UpdateStopLayout(){TableLayoutPanel layout=stopValue.Parent as TableLayoutPanel;if(layout!=null&&layout.ColumnStyles.Count>0)layout.ColumnStyles[0].Width=stopRule.SelectedIndex<2?65:0;}
+        void UpdateStopLayout(){TableLayoutPanel layout=stopValue.Parent as TableLayoutPanel;if(layout!=null&&layout.ColumnStyles.Count>0)layout.ColumnStyles[0].Width=stopRule.SelectedIndex<2?65*UiScale.Layout:0;}
+        // 0.74 is the compact design scale; Layout adds the display (DPI) scale on top.
+        float CompactFactor{get{return compactScaled?0.74f*UiScale.Layout:1f;}}
         void SetEditingEnabled(bool enabled){foreach(Control control in new Control[]{mouse,keyCapture,interval,stopRule,stopValue,lockTarget,autoResume})control.Enabled=enabled;targets.Enabled=enabled&&lockTarget.Checked;foreach(Button tab in modeTabs)tab.Enabled=enabled;}
         void BuildUi() {
             MinimumSize=Size.Empty;MaximumSize=Size.Empty;FormBorderStyle=FormBorderStyle.None;MaximizeBox=false;ClientSize=new Size(540,692);
@@ -203,7 +236,7 @@ namespace AutoLoop {
             keyChoices=StyledCombo(380);keyChoices.Location=mouse.Location;keyChoices.Size=mouse.Size;keyChoices.Anchor=mouse.Anchor;keyChoices.Visible=false;List<int> choiceCodes=new List<int>();for(int key=65;key<=90;key++)choiceCodes.Add(key);for(int key=48;key<=57;key++)choiceCodes.Add(key);for(int key=112;key<=135;key++)choiceCodes.Add(key);for(int key=96;key<=105;key++)choiceCodes.Add(key);choiceCodes.AddRange(new int[]{32,13,9,8,27,37,38,39,40,45,46,36,35,33,34,106,107,109,110,111});foreach(int code in choiceCodes)keyChoices.Items.Add(new KeyChoice{Code=code});SelectActionKey(actionKey);keyChoices.SelectedIndexChanged+=delegate{if(keyChoices.SelectedItem is KeyChoice)actionKey=((KeyChoice)keyChoices.SelectedItem).Code;};keyCapture=new RoundedButton{Text=KeyName(actionKey),BackColor=field,ForeColor=ink,Location=keyChoices.Location,Size=keyChoices.Size,Anchor=keyChoices.Anchor,Visible=false,TextAlign=ContentAlignment.MiddleLeft,AccessibleName="Choose repeated key"};tips.SetToolTip(keyCapture,"Click here, then press the key you want to repeat.");keyCapture.Click+=delegate{if(IsBusy())return;using(ModalScope scope=new ModalScope(this))using(ShortcutDialog dialog=new ShortcutDialog("Choose repeated key",actionKey)){if(dialog.ShowDialog(ModalOwner)==DialogResult.OK){if((dialog.Binding&(int)Keys.Modifiers)!=0){Message("Choose a single key. Use Record for combinations.");return;}actionKey=dialog.Binding;SelectActionKey(actionKey);keyCapture.Text=KeyName(actionKey);}}};normalHost.Controls.Add(keyCapture);
             normalHost.Controls.Add(new Label{Text="Interval",AutoSize=true,ForeColor=ink,Location=new Point(0,112)});interval=Number(10,3600000,100,210);interval.Font=new Font("Segoe UI",16);interval.Location=new Point(174,101);interval.Width=210;interval.Height=54;normalHost.Controls.Add(interval);normalHost.Controls.Add(new Label{Text="ms",AutoSize=true,ForeColor=muted,Location=new Point(400,112)});tips.SetToolTip(interval,"100 ms = one press every tenth of a second.");
             recordingHost=new Panel{Dock=DockStyle.Fill,Visible=false,Margin=new Padding(0)};recordCount=new Label{Text="Recorded routine · 0 steps",Dock=DockStyle.Top,Height=0,ForeColor=ink,Font=new Font("Segoe UI",10)};events=new ListBox{Dock=DockStyle.Fill,BackColor=field,ForeColor=ink,BorderStyle=BorderStyle.None,IntegralHeight=false,Font=new Font("Segoe UI",14),DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=45};events.DrawItem+=DrawRecordedStep;
-            recordingTools=new TableLayoutPanel{Dock=DockStyle.Bottom,Height=54,ColumnCount=4,RowCount=1,Padding=new Padding(0,6,0,2)};recordingTools.RowStyles.Add(new RowStyle(SizeType.Percent,100));for(int i=0;i<4;i++)recordingTools.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,i==0?32f:22.666f));Button delay=ButtonFor("Delay",75);delay.Click+=delegate{EditDelay();};Button remove=ButtonFor("Remove",75);remove.Click+=delegate{if(IsBusy()||events.SelectedIndex<0)return;recorded.RemoveAt(events.SelectedIndex);UpdateEvents();};Button clear=ButtonFor("Clear",75);clear.Click+=delegate{if(IsBusy())return;recorded.Clear();UpdateEvents();};Button save=ButtonFor("Save",75);save.Click+=delegate{SaveRoutine();};Button open=ButtonFor("Open",75);open.Click+=delegate{LoadRoutine();};ContextMenuStrip editMenu=new ContextMenuStrip();editMenu.Items.Add("Change delay",null,delegate{EditDelay();});editMenu.Items.Add("Remove selected step",null,delegate{if(!IsBusy()&&events.SelectedIndex>=0){recorded.RemoveAt(events.SelectedIndex);UpdateEvents();}});events.ContextMenuStrip=editMenu;Button testOnce=ButtonFor("Test once",100);testOnce.Click+=delegate{StartCountdown(false,true);};tips.SetToolTip(testOnce,"Play this recording once without changing its repeat or time settings.");Button[] tools={testOnce,clear,save,open};for(int i=0;i<tools.Length;i++){tools[i].Dock=DockStyle.Fill;tools[i].Margin=new Padding(0,0,i==3?0:6,0);tools[i].Font=new Font("Segoe UI",14);recordingTools.Controls.Add(tools[i],i,0);}recordingHost.Controls.Add(events);recordingHost.Controls.Add(recordCount);recordingHost.Controls.Add(recordingTools);
+            recordingTools=new TableLayoutPanel{Dock=DockStyle.Bottom,Height=54,ColumnCount=4,RowCount=1,Padding=new Padding(0,6,0,2)};recordingTools.RowStyles.Add(new RowStyle(SizeType.Percent,100));for(int i=0;i<4;i++)recordingTools.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,i==0?32f:22.666f));Button delay=ButtonFor("Delay",75);delay.Click+=delegate{EditDelay();};Button remove=ButtonFor("Remove",75);remove.Click+=delegate{if(IsBusy()||events.SelectedIndex<0)return;recorded.RemoveAt(events.SelectedIndex);UpdateEvents();};Button clear=ButtonFor("Clear",75);clear.Click+=delegate{if(IsBusy()||recorded.Count==0)return;if(!SelfTestMode&&MessageBox.Show(ModalOwner,"Clear all "+recorded.Count+" recorded steps?","Auto Loop",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;recorded.Clear();UpdateEvents();};Button save=ButtonFor("Save",75);save.Click+=delegate{SaveRoutine();};Button open=ButtonFor("Open",75);open.Click+=delegate{LoadRoutine();};ContextMenuStrip editMenu=new ContextMenuStrip();editMenu.Items.Add("Change delay",null,delegate{EditDelay();});editMenu.Items.Add("Remove selected step",null,delegate{if(!IsBusy()&&events.SelectedIndex>=0){recorded.RemoveAt(events.SelectedIndex);UpdateEvents();}});events.ContextMenuStrip=editMenu;Button testOnce=ButtonFor("Test once",100);testOnce.Click+=delegate{StartCountdown(false,true);};tips.SetToolTip(testOnce,"Play this recording once without changing its repeat or time settings.");Button[] tools={testOnce,clear,save,open};for(int i=0;i<tools.Length;i++){tools[i].Dock=DockStyle.Fill;tools[i].Margin=new Padding(0,0,i==3?0:6,0);tools[i].Font=new Font("Segoe UI",14);recordingTools.Controls.Add(tools[i],i,0);}recordingHost.Controls.Add(events);recordingHost.Controls.Add(recordCount);recordingHost.Controls.Add(recordingTools);
             Panel modeHost=new Panel{Dock=DockStyle.Fill,Margin=new Padding(0)};modeHost.Controls.Add(normalHost);modeHost.Controls.Add(recordingHost);optionGrid.Controls.Add(modeHost,0,0);
             repeats=Number(0,1000000,10,100);limit=Number(0,86400,0,100);TableLayoutPanel stopRow=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Margin=new Padding(0),Padding=new Padding(0,0,0,8)};stopRow.RowStyles.Add(new RowStyle(SizeType.Percent,100));stopRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,174));stopRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));stopRow.Controls.Add(FieldLabel("Stop after"),0,0);stopValue=Number(1,1000000,10,78);stopValue.Dock=DockStyle.Top;stopValue.Margin=new Padding(0,3,7,0);stopRule=StyledCombo(200);stopRule.Dock=DockStyle.Top;stopRule.Items.AddRange(new object[]{"repeats","seconds","Until stopped"});stopRule.SelectedIndex=0;stopRule.Margin=new Padding(0);stopValue.ShowBorder=false;stopValue.ShowSpin=false;stopValue.TextInset=2;stopValue.BackColor=field;stopValue.Margin=new Padding(0);stopValue.Dock=DockStyle.Fill;((DarkComboBox)stopRule).BorderVisible=false;stopRule.BackColor=field;stopRule.Margin=new Padding(0);RoundedPanel unitGroup=new RoundedPanel{Dock=DockStyle.Fill,BackColor=field,Margin=new Padding(0),Padding=new Padding(7,4,7,4)};TableLayoutPanel unitLayout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Margin=new Padding(0)};unitLayout.RowStyles.Add(new RowStyle(SizeType.Percent,100));unitLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,65));unitLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));unitLayout.Controls.Add(stopValue,0,0);unitLayout.Controls.Add(stopRule,1,0);unitGroup.Controls.Add(unitLayout);stopRow.Controls.Add(unitGroup,1,0);stopRule.SelectedIndexChanged+=delegate{SetStopMode();};stopValue.ValueChanged+=delegate{SyncStopValues();};optionGrid.Controls.Add(stopRow,0,1);
             Panel targetPanel=new Panel{Dock=DockStyle.Bottom,BackColor=card,Height=88,Padding=new Padding(0),Margin=new Padding(0)};configuration.Controls.Add(targetPanel);compactRoot.SetRowSpan(configuration,2);targetPanel.Paint+=delegate(object sender,PaintEventArgs e){using(Pen line=new Pen(Color.FromArgb(50,67,84)))e.Graphics.DrawLine(line,0,4,targetPanel.Width,4);};
@@ -212,13 +245,13 @@ namespace AutoLoop {
             Panel targetDetails=new Panel{Location=new Point(0,80),Size=new Size(480,100),Visible=false};targetPanel.Controls.Add(targetDetails);
             targets=StyledCombo(420);targets.Location=new Point(0,0);targetDetails.Controls.Add(targets);Button refresh=new IconButton{IconKind="refresh",Bare=true,BackColor=card,ForeColor=ink,Location=new Point(426,0),Size=new Size(32,32),AccessibleName="Refresh apps"};refresh.Click+=delegate{if(!IsBusy())RefreshWindows();};targetDetails.Controls.Add(refresh);
             lockTarget=new MintCheckBox{Checked=false,Visible=false};targetPanel.Controls.Add(lockTarget);autoResume=new MintCheckBox{Text="Resume when I return",Checked=true,AutoSize=true,ForeColor=ink,Location=new Point(0,58)};targetDetails.Controls.Add(autoResume);
-            Action syncTarget=delegate{bool selected=lockTarget.Checked;targetDetails.Visible=selected;targets.Enabled=selected;anyApp.BackColor=selected?field:accent;anyApp.ForeColor=selected?ink:bg;selectedApp.BackColor=selected?accent:field;selectedApp.ForeColor=selected?bg:ink;targetPanel.Height=(int)Math.Round((selected?190:88)*(compactScaled?0.74f:1f));compactRoot.RowStyles[3].Height=(selected?190:88)*(compactScaled?0.74f:1f);ClientSize=compactScaled?new Size(400,selected?587:512):new Size(540,selected?794:692);};lockTarget.CheckedChanged+=delegate{syncTarget();};anyApp.Click+=delegate{if(!IsBusy())lockTarget.Checked=false;};selectedApp.Click+=delegate{if(!IsBusy())lockTarget.Checked=true;};syncTarget();
+            Action syncTarget=delegate{bool selected=lockTarget.Checked;targetDetails.Visible=selected;targets.Enabled=selected;anyApp.BackColor=selected?field:accent;anyApp.ForeColor=selected?ink:bg;selectedApp.BackColor=selected?accent:field;selectedApp.ForeColor=selected?bg:ink;targetPanel.Height=(int)Math.Round((selected?190:88)*CompactFactor);compactRoot.RowStyles[3].Height=(selected?190:88)*CompactFactor;ClientSize=compactScaled?new Size(UiScale.Px(400),UiScale.Px(selected?587:512)):new Size(540,selected?794:692);};lockTarget.CheckedChanged+=delegate{syncTarget();};anyApp.Click+=delegate{if(!IsBusy())lockTarget.Checked=false;};selectedApp.Click+=delegate{if(!IsBusy())lockTarget.Checked=true;};syncTarget();
             TableLayoutPanel actions=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=5,Margin=new Padding(0,2,0,4)};for(int i=0;i<5;i++)actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,20));playButton=new ActionButton{Text="Start · F6",Symbol="\u25B6",SymbolColor=accent,BackColor=card,ForeColor=ink};recordButton=new ActionButton{Text="Record · F7",Symbol="\u25CF",SymbolColor=Color.FromArgb(255,111,111),BackColor=card,ForeColor=ink};pauseButton=new ActionButton{Text="Pause · F8",Symbol="\u23F8",SymbolColor=ink,BackColor=card,ForeColor=ink};stopButton=new ActionButton{Text="Stop · F9",Symbol="\u25A0",SymbolColor=ink,BackColor=card,ForeColor=ink};Button gear=new ActionButton{Text="Settings",Symbol="\u2699",SymbolColor=ink,BackColor=card,ForeColor=ink};gear.AccessibleName="Settings";tips.SetToolTip(gear,"Shortcuts and advanced settings");gear.Click+=delegate{if(!IsBusy()){using(ModalScope scope=new ModalScope(this))settingsWindow.ShowDialog(ModalOwner);}};Button[] buttons={playButton,recordButton,pauseButton,stopButton,gear};for(int i=0;i<5;i++){buttons[i].Dock=DockStyle.Fill;buttons[i].Margin=new Padding(0,0,5,0);actions.Controls.Add(buttons[i],i,0);}playButton.Click+=delegate{StartCountdown(false);};recordButton.Click+=delegate{ToggleRecord();};pauseButton.Click+=delegate{TogglePause();};stopButton.Click+=delegate{StopAll("Stopped");};actions.Paint+=delegate(object sender,PaintEventArgs e){using(Pen separator=new Pen(Color.FromArgb(57,74,91))){int separatorX=gear.Left-3;e.Graphics.DrawLine(separator,separatorX,12,separatorX,actions.Height-12);}};compactRoot.Controls.Add(actions,0,4);
             Panel footer=new Panel{Dock=DockStyle.Fill};status=new StatusLabel{Text="Ready",Dock=DockStyle.Fill,ForeColor=ink,Font=new Font("Segoe UI",14,FontStyle.Regular),AutoEllipsis=true};detail=new Label{Text="Choose an app, then start.",Visible=false};tips.SetToolTip(status,detail.Text);footer.Controls.Add(status);compactRoot.Controls.Add(footer,0,5);BuildSettings();
-            modes.SelectedIndexChanged+=delegate{int mode=modes.SelectedIndex;mouse.Visible=mode==0;keyCapture.Visible=mode==1;normalHost.Visible=mode!=2;recordingHost.Visible=mode==2;actionLabel.Text=mode==1?"Key to repeat":"Mouse button";if(mode==2)recordingHost.BringToFront();else normalHost.BringToFront();for(int i=0;i<3;i++){modeTabs[i].ForeColor=i==mode?bg:ink;modeTabs[i].BackColor=i==mode?accent:card;modeTabs[i].FlatAppearance.BorderColor=i==mode?accent:Color.FromArgb(57,69,84);}};modeTabs[0].ForeColor=bg;modeTabs[0].BackColor=accent;Scale(new SizeF(0.74f,0.74f));ScaleCompactFonts(this);keyCapture.Size=mouse.Size;compactScaled=true;ClientSize=new Size(400,512);interval.TextInset=7;interval.Height++;interval.Height--;
+            modes.SelectedIndexChanged+=delegate{int mode=modes.SelectedIndex;mouse.Visible=mode==0;keyCapture.Visible=mode==1;normalHost.Visible=mode!=2;recordingHost.Visible=mode==2;actionLabel.Text=mode==1?"Key to repeat":"Mouse button";if(mode==2)recordingHost.BringToFront();else normalHost.BringToFront();for(int i=0;i<3;i++){modeTabs[i].ForeColor=i==mode?bg:ink;modeTabs[i].BackColor=i==mode?accent:card;modeTabs[i].FlatAppearance.BorderColor=i==mode?accent:Color.FromArgb(57,69,84);}};modeTabs[0].ForeColor=bg;modeTabs[0].BackColor=accent;float layout=0.74f*UiScale.Layout;Scale(new SizeF(layout,layout));ScaleCompactFonts(this);keyCapture.Size=mouse.Size;compactScaled=true;ClientSize=new Size(UiScale.Px(400),UiScale.Px(512));interval.TextInset=UiScale.Px(7);interval.Height++;interval.Height--;
         }
 
-        void ScaleCompactFonts(Control root){List<Control> all=new List<Control>();Action<Control> walk=null;walk=delegate(Control c){all.Add(c);foreach(Control child in c.Controls)walk(child);};walk(root);Font[] fonts=all.Select(c=>new Font(c.Font.FontFamily,c.Font.Size*0.74f,c.Font.Style)).ToArray();for(int i=0;i<all.Count;i++){all[i].Font=fonts[i];DarkComboBox combo=all[i] as DarkComboBox;if(combo!=null)combo.ItemHeight=(int)(combo.ItemHeight*0.74f);}keyCapture.Size=mouse.Size;events.ItemHeight=24;recordCount.Visible=false;}
+        void ScaleCompactFonts(Control root){List<Control> all=new List<Control>();Action<Control> walk=null;walk=delegate(Control c){all.Add(c);foreach(Control child in c.Controls)walk(child);};walk(root);float fontFactor=0.74f*UiScale.Simulated,itemFactor=0.74f*UiScale.Layout;Font[] fonts=all.Select(c=>new Font(c.Font.FontFamily,c.Font.Size*fontFactor,c.Font.Style)).ToArray();for(int i=0;i<all.Count;i++){all[i].Font=fonts[i];DarkComboBox combo=all[i] as DarkComboBox;if(combo!=null)combo.ItemHeight=(int)(combo.ItemHeight*itemFactor);}keyCapture.Size=mouse.Size;events.ItemHeight=UiScale.Px(24);recordCount.Visible=false;}
         void BuildSettings() {
             settingsWindow=new ThemedDialog{Text="Auto Loop · Settings",ClientSize=new Size(490,450),Font=new Font("Segoe UI",12),BackColor=bg,ForeColor=ink,StartPosition=FormStartPosition.CenterParent,FormBorderStyle=FormBorderStyle.None,MaximizeBox=false,MinimizeBox=false};
             FlowLayoutPanel page=new FlowLayoutPanel{Dock=DockStyle.Fill,Padding=new Padding(18),FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true};settingsWindow.Controls.Add(page);
@@ -246,28 +279,64 @@ namespace AutoLoop {
         void SetStatus(string text,string extra) {LastMessage=text;status.Text=text;detail.Text=extra;tips.SetToolTip(status,extra);}
         void RefreshWindows() {
             IntPtr selected=targets.SelectedItem is WindowChoice?((WindowChoice)targets.SelectedItem).Handle:IntPtr.Zero; targets.Items.Clear();
-            Native.EnumWindows(delegate(IntPtr w,IntPtr p){string title=Native.Title(w); if(w!=Handle&&Native.IsWindowVisible(w)&&title.Length>0&&Native.ProcessId(w)!=(uint)Process.GetCurrentProcess().Id)targets.Items.Add(new WindowChoice{Handle=w,Process=Native.ProcessId(w),Title=title});return true;},IntPtr.Zero);
+            Native.EnumWindows(delegate(IntPtr w,IntPtr p){string title=Native.Title(w); if(w!=Handle&&Native.IsWindowVisible(w)&&title.Length>0&&Native.ProcessId(w)!=ownProcess)targets.Items.Add(new WindowChoice{Handle=w,Process=Native.ProcessId(w),Title=title});return true;},IntPtr.Zero);
             for(int i=0;i<targets.Items.Count;i++) if(((WindowChoice)targets.Items[i]).Handle==selected) targets.SelectedIndex=i;
         }
         bool BindTarget() {
             boundTarget=null; if(!lockTarget.Checked)return true;
             WindowChoice target=targets.SelectedItem as WindowChoice;
             if(target==null||!Native.IsWindow(target.Handle)||Native.ProcessId(target.Handle)!=target.Process){Message("Choose an open target app. Use Refresh apps if it is missing.");return false;}
+            if(ProcessElevated(target.Process)){Message("\""+target.Title+"\" is running as administrator. Windows blocks simulated input and recording from a normal app, so Auto Loop cannot control it.\n\nRun the target app normally, or run Auto Loop as administrator.");return false;}
             boundTarget=target;return true;
         }
-        bool FocusEligible() {
-            if(TestFocus.HasValue)return TestFocus.Value;
-            IntPtr foreground=Native.GetForegroundWindow();
-            if(foreground==Handle||Native.ProcessId(foreground)==(uint)Process.GetCurrentProcess().Id)return false;
-            return boundTarget==null || (Native.IsWindow(boundTarget.Handle)&&Native.ProcessId(boundTarget.Handle)==boundTarget.Process&&foreground==boundTarget.Handle);
+        // True when Windows would silently drop our input to this process (UIPI): it is elevated and we are not.
+        bool ProcessElevated(uint process) {
+            if(TestElevated!=null)return TestElevated(process);
+            if(process==0||process==ownProcess)return false;
+            if(!selfElevated.HasValue)selfElevated=Native.IsElevated(ownProcess)==true;
+            if(selfElevated.Value)return false;
+            bool elevated;
+            if(!elevationCache.TryGetValue(process,out elevated)){elevated=Native.IsElevated(process)==true;elevationCache[process]=elevated;}
+            return elevated;
         }
+        // The selected window, or a dialog or popup it owns.
+        bool IsTargetWindow(IntPtr window) {
+            if(boundTarget==null||window==IntPtr.Zero)return false;
+            return window==boundTarget.Handle||Native.GetAncestor(window,Native.RootOwner)==boundTarget.Handle;
+        }
+        bool TargetGone() {
+            if(boundTarget==null||TestFocus.HasValue)return false;
+            return !Native.IsWindow(boundTarget.Handle)||Native.ProcessId(boundTarget.Handle)!=boundTarget.Process;
+        }
+        string FocusBlockReason() {
+            string notTarget=boundTarget==null?"Auto Loop is active":"selected app is not active";
+            if(TestFocus.HasValue)return TestFocus.Value?null:notTarget;
+            IntPtr foreground=Native.GetForegroundWindow();uint process=Native.ProcessId(foreground);
+            if(foreground==Handle||process==ownProcess)return "Auto Loop is active";
+            if(boundTarget!=null&&(TargetGone()||!IsTargetWindow(foreground)))return notTarget;
+            if(ProcessElevated(process))return "the active app runs as administrator";
+            return null;
+        }
+        bool FocusEligible() { return FocusBlockReason()==null; }
+        // Whether a click at this screen point would reach the app being automated (never Auto Loop itself).
+        bool PointerAllowed(Native.POINT point,bool mustHitTarget) {
+            IntPtr root=TestRootAt!=null?TestRootAt(point):Native.GetAncestor(Native.WindowFromPoint(point),Native.RootWindow);
+            if(root==IntPtr.Zero)return !mustHitTarget||boundTarget==null;
+            uint process=Native.ProcessId(root);
+            if(root==Handle||process==ownProcess)return false;
+            if(mustHitTarget&&boundTarget!=null)return process==boundTarget.Process||IsTargetWindow(root);
+            return true;
+        }
+        // SendInput moves are applied asynchronously, so right after a playback Move the cursor may not be there yet: check the intended point.
+        Native.POINT lastMovePoint; long lastMoveClock=long.MinValue/2;
+        bool PointerOnTarget() { Native.POINT point; if(activeClock-lastMoveClock<=50)point=lastMovePoint;else Native.GetCursorPos(out point); return PointerAllowed(point,true); }
         bool ShortcutHeld() {
             foreach(int binding in preferences.Hotkeys) if((Native.GetAsyncKeyState(binding & 0xFFFF)&0x8000)!=0)return true;
             return (Native.GetAsyncKeyState(16)&0x8000)!=0||(Native.GetAsyncKeyState(17)&0x8000)!=0||(Native.GetAsyncKeyState(18)&0x8000)!=0||(Native.GetAsyncKeyState(91)&0x8000)!=0||(Native.GetAsyncKeyState(92)&0x8000)!=0;
         }
         void StartCountdown(bool rec, bool once=false) {
             if(running||recording||pendingPlay||pendingRecord)return;
-            CancelPositionCapture();
+            CancelPositionCapture();elevationCache.Clear();
             if(rec&&(keyboardHook==IntPtr.Zero||mouseHook==IntPtr.Zero)){Message("Recording is unavailable because the input hooks could not be installed. Restart Auto Loop.");return;}
             if(!BindTarget())return;
             if(!rec&&!stopHotkeyRegistered){Message("Set an available global Stop shortcut in Settings before starting playback.");return;}
@@ -305,11 +374,16 @@ namespace AutoLoop {
                 playback.Add(new Step{Kind=click?"MouseUp":"KeyUp",Code=code,Delay=(int)hold.Value,Extended=!click&&Native.Extended(code)});
                 playback.Add(new Step{Kind="Wait",Delay=(int)(interval.Value-hold.Value)});
             }
-            repeatCount=once?1:(int)repeats.Value;maxDuration=once?0:(long)limit.Value*1000;completed=0;index=0;due=playback[0].Delay;running=true;userPaused=false;focusPaused=false;ResetClock();
+            lastMoveClock=long.MinValue/2;repeatCount=once?1:(int)repeats.Value;maxDuration=once?0:(long)limit.Value*1000;completed=0;index=0;due=playback[0].Delay;running=true;userPaused=false;focusPaused=false;ResetClock();
             SetStatus(once?"Testing once":"Running","Stop: "+KeyName(preferences.Hotkeys[3])+(boundTarget==null?". Input follows the active app.":". Input is restricted to the selected app."));
         }
         static Step Clone(Step s){return new Step{Kind=s.Kind,Code=s.Code,X=s.X,Y=s.Y,Delay=s.Delay,Extended=s.Extended};}
-        void ToggleRecord() {if(recording){FinishRecording();return;}if(running||pendingPlay||pendingRecord)return;StartCountdown(true);}
+        void ToggleRecord() {
+            if(recording){FinishRecording();return;}if(running||pendingPlay||pendingRecord)return;
+            // A stray Record shortcut must not silently wipe a recording that may not be saved.
+            if(recorded.Count>0&&!SelfTestMode){using(ModalScope scope=new ModalScope(this)){if(MessageBox.Show(ModalOwner,"Start a new recording? It replaces the current "+recorded.Count+" steps. Use Save first if you want to keep them.","Auto Loop",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;}}
+            StartCountdown(true);
+        }
         void BeginRecording() {
             recordingLimitReached=false;recorded.Clear();recordKeys.Clear();recordMouse.Clear();recordedAt=0;lastMove=-100;recording=true;userPaused=false;focusPaused=false;modes.SelectedIndex=2;ResetClock();UpdateEvents();
             SetStatus("Recording","Capturing physical keys, clicks, scrolling and screen positions outside Auto Loop. Use Record again to finish.");
@@ -341,14 +415,41 @@ namespace AutoLoop {
             SetEditingEnabled(true);
             SetStatus(reason,released?"All generated keys and mouse buttons have been released.":"Some generated inputs could not be released. Press Stop to retry.");
         }
-        void PauseForFocusLoss() {
-            focusPauseReason=boundTarget==null?"Auto Loop is active":"selected app is not active";
+        void PauseForFocusLoss(string reason=null) {
+            focusPauseReason=reason??FocusBlockReason()??(boundTarget==null?"Auto Loop is active":"selected app is not active");
             focusPaused=true;
             wasEligible=false;
             if(!ReleaseAll()){StopAll("Stopped — input release failed");return;}
-            if(recording)BalanceRecording();
+            if(recording){TrimFocusSwitchInput();BalanceRecording();}
             else {index=0;due=activeClock+playback[0].Delay;}
             if(!autoResume.Checked)userPaused=true;
+        }
+        // A click outside the selected app would land in another window, so playback waits for the user instead of retrying.
+        void PauseForPointer() {
+            PauseForFocusLoss(boundTarget==null?"pointer is over Auto Loop":"pointer is outside the selected app");
+            if(running)userPaused=true;
+        }
+        // Removes the keys or clicks that switched away from the recorded app (Alt+Tab, Win, a taskbar click),
+        // so playback does not repeat the switch and pause itself. Their delays move to the next kept step.
+        void TrimFocusSwitchInput() {
+            int count=recorded.Count;if(count==0)return;
+            int start=count;long time=recordedAt;
+            for(int i=count-1;i>=0;i--){if(activeClock-time>FocusSwitchWindowMs)break;start=i;time-=recorded[i].Delay;}
+            if(start==count)return;
+            bool[] drop=new bool[count];HashSet<int> keys=new HashSet<int>(),buttons=new HashSet<int>();
+            for(int i=start;i<count;i++){
+                Step s=recorded[i];bool mouseStep=false;
+                if(s.Kind=="KeyDown"){keys.Add(s.Code);drop[i]=true;}
+                else if(s.Kind=="KeyUp"&&keys.Remove(s.Code))drop[i]=true;
+                else if(s.Kind=="MouseDown"){buttons.Add(s.Code);drop[i]=mouseStep=true;}
+                else if(s.Kind=="MouseUp"&&buttons.Remove(s.Code))drop[i]=mouseStep=true;
+                if(mouseStep&&i>0&&recorded[i-1].Kind=="Move")drop[i-1]=true;
+            }
+            foreach(int k in keys)recordKeys.Remove(k);
+            foreach(int b in buttons)recordMouse.Remove(b);
+            List<Step> kept=new List<Step>();long carry=0;
+            for(int i=0;i<count;i++){Step s=recorded[i];if(drop[i]){carry+=s.Delay;continue;}if(carry>0){s.Delay=(int)Math.Min(3600000,s.Delay+carry);carry=0;}kept.Add(s);}
+            recorded=kept;recordedAt-=carry;
         }
         void TickEngine() {
             if(busy)return;busy=true;
@@ -365,7 +466,7 @@ namespace AutoLoop {
                     return;
                 }
                 if(!running&&!recording)return;
-                if(boundTarget!=null&&(!Native.IsWindow(boundTarget.Handle)||Native.ProcessId(boundTarget.Handle)!=boundTarget.Process)){StopAll("Target app closed — stopped");return;}
+                if(TargetGone()){StopAll("Target app closed — stopped");return;}
                 AdvanceClock();bool focus=FocusEligible();
                 if(!focus||userPaused) {
                     if(!focus&&!focusPaused){PauseForFocusLoss();if(!running&&!recording)return;}
@@ -377,19 +478,21 @@ namespace AutoLoop {
                 int budget=0;
                 while(running&&activeClock>=due&&budget++<100) {
                     if(!FocusEligible()){PauseForFocusLoss();return;}
+                    string kind=playback[index].Kind;
+                    if((kind=="MouseDown"||kind=="Wheel")&&!PointerOnTarget()){PauseForPointer();return;}
                     Execute(playback[index]);index++;
                     if(index==playback.Count){if(!ReleaseAll()){StopAll("Stopped — input release failed");return;}completed++;if(repeatCount>0&&completed>=repeatCount){StopAll("Finished  ·  "+completed+" repeats");return;}index=0;due=Math.Max(activeClock,due)+playback[0].Delay;if(playback.All(s=>s.Delay==0))due+=10;continue;}
                     due=Math.Max(due,activeClock)+playback[index].Delay;
                 }
                 status.Text="Running  ·  "+completed+(repeatCount>0?" / "+repeatCount:"")+" repeats";
-            } catch(Exception e){StopAll("Stopped — input could not be sent");Message(e.Message);}finally{busy=false;}
+            } catch(Exception e){StopAll("Stopped — input could not be sent");if(!SelfTestMode&&WindowState==FormWindowState.Minimized)WindowState=FormWindowState.Normal;Message(e.Message);}finally{busy=false;}
         }
         void Execute(Step s) {
             if(s.Kind=="KeyDown"){Send(Native.Key(s.Code,false,s.Extended));heldKeys[s.Code]=s.Extended;}
             else if(s.Kind=="KeyUp"){Send(Native.Key(s.Code,true,s.Extended));heldKeys.Remove(s.Code);}
             else if(s.Kind=="MouseDown"){Send(Native.Mouse(s.Code,false));heldMouse.Add(s.Code);}
             else if(s.Kind=="MouseUp"){Send(Native.Mouse(s.Code,true));heldMouse.Remove(s.Code);}
-            else if(s.Kind=="Move")Send(Native.Move(s.X,s.Y));
+            else if(s.Kind=="Move"){Send(Native.Move(s.X,s.Y));lastMovePoint=new Native.POINT{X=s.X,Y=s.Y};lastMoveClock=activeClock;}
             else if(s.Kind=="Wheel"){Native.INPUT i=new Native.INPUT();i.u.mi.flags=0x800;i.u.mi.mouseData=unchecked((uint)s.Code);Send(i);}
         }
         void Send(Native.INPUT input){if(InputSink!=null)InputSink(input);else Native.Send(input);}
@@ -436,6 +539,11 @@ namespace AutoLoop {
                 if(code>=0&&CanRecord()) {
                     Native.MOUSE m=(Native.MOUSE)Marshal.PtrToStructure(data,typeof(Native.MOUSE));if((m.flags&1)!=0)return Native.CallNextHookEx(mouseHook,code,message,data);
                     int msg=message.ToInt32(),button=0;bool down=false,up=false;
+                    // Never record pointer activity over Auto Loop (e.g. clicking Record to finish), and in Selected app
+                    // mode never record a new press or scroll that would land in another window.
+                    bool overAutoLoop=!PointerAllowed(m.pt,false),outsideTarget=overAutoLoop||!PointerAllowed(m.pt,true);
+                    bool isRelease=msg==0x202||msg==0x205||msg==0x208||msg==0x20C;
+                    if(overAutoLoop&&!isRelease||outsideTarget&&!isRelease&&msg!=0x200)return Native.CallNextHookEx(mouseHook,code,message,data);
                     if(msg==0x200){AdvanceClock();if(activeClock-lastMove>=20&&ReserveRecordingSteps(1)){lastMove=activeClock;CaptureStep(new Step{Kind="Move",X=m.pt.X,Y=m.pt.Y});}}
                     else if(msg==0x20A&&ReserveRecordingSteps(2)){CaptureStep(new Step{Kind="Move",X=m.pt.X,Y=m.pt.Y});CaptureStep(new Step{Kind="Wheel",Code=(short)(m.data>>16)});}
                     else {
@@ -452,7 +560,7 @@ namespace AutoLoop {
         }
         void UpdateEvents(){events.BeginUpdate();events.Items.Clear();foreach(Step s in recorded)events.Items.Add(s);events.EndUpdate();recordCount.Text="Recorded routine · "+recorded.Count+" steps";}
         internal static string StepLabel(Step step){if(step.Kind=="KeyDown")return "Press "+KeyName(step.Code);if(step.Kind=="KeyUp")return "Release "+KeyName(step.Code);if(step.Kind=="Move")return "Move mouse";if(step.Kind=="MouseDown"||step.Kind=="MouseUp"){string button=((MouseButtons)step.Code).ToString().ToLowerInvariant();return (step.Kind=="MouseDown"?"Press ":"Release ")+button+" mouse button";}if(step.Kind=="Wait")return "Wait";if(step.Kind=="Wheel")return "Scroll mouse wheel";return step.Kind;}
-        void DrawRecordedStep(object sender,DrawItemEventArgs e){if(e.Index<0||e.Index>=recorded.Count)return;Step step=recorded[e.Index];Color row=(e.State&DrawItemState.Selected)!=0?Color.FromArgb(39,66,70):field;using(Brush fill=new SolidBrush(row))e.Graphics.FillRectangle(fill,e.Bounds);string action=StepLabel(step);TextRenderer.DrawText(e.Graphics,(e.Index+1).ToString(),events.Font,new Rectangle(e.Bounds.X+5,e.Bounds.Y,26,e.Bounds.Height),muted,TextFormatFlags.VerticalCenter);TextRenderer.DrawText(e.Graphics,action,events.Font,new Rectangle(e.Bounds.X+37,e.Bounds.Y,Math.Max(0,e.Bounds.Width-112),e.Bounds.Height),ink,TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);TextRenderer.DrawText(e.Graphics,step.Delay+" ms",events.Font,new Rectangle(e.Bounds.Right-74,e.Bounds.Y,68,e.Bounds.Height),muted,TextFormatFlags.VerticalCenter|TextFormatFlags.Right);using(Pen line=new Pen(Color.FromArgb(39,49,63)))e.Graphics.DrawLine(line,e.Bounds.Left,e.Bounds.Bottom-1,e.Bounds.Right,e.Bounds.Bottom-1);}
+        void DrawRecordedStep(object sender,DrawItemEventArgs e){if(e.Index<0||e.Index>=recorded.Count)return;Step step=recorded[e.Index];Color row=(e.State&DrawItemState.Selected)!=0?Color.FromArgb(39,66,70):field;using(Brush fill=new SolidBrush(row))e.Graphics.FillRectangle(fill,e.Bounds);string action=StepLabel(step);Func<float,int> px=UiScale.Px;TextRenderer.DrawText(e.Graphics,(e.Index+1).ToString(),events.Font,new Rectangle(e.Bounds.X+px(5),e.Bounds.Y,px(26),e.Bounds.Height),muted,TextFormatFlags.VerticalCenter);TextRenderer.DrawText(e.Graphics,action,events.Font,new Rectangle(e.Bounds.X+px(37),e.Bounds.Y,Math.Max(0,e.Bounds.Width-px(112)),e.Bounds.Height),ink,TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);TextRenderer.DrawText(e.Graphics,step.Delay+" ms",events.Font,new Rectangle(e.Bounds.Right-px(74),e.Bounds.Y,px(68),e.Bounds.Height),muted,TextFormatFlags.VerticalCenter|TextFormatFlags.Right);using(Pen line=new Pen(Color.FromArgb(39,49,63)))e.Graphics.DrawLine(line,e.Bounds.Left,e.Bounds.Bottom-1,e.Bounds.Right,e.Bounds.Bottom-1);}
         void EditDelay() {
             if(IsBusy()||events.SelectedIndex<0)return;int chosen=events.SelectedIndex;
             using(ModalScope scope=new ModalScope(this))using(ThemedDialog dialog=new ThemedDialog{Text="Delay before this step (ms)",ClientSize=new Size(350,175)}){
@@ -476,7 +584,7 @@ namespace AutoLoop {
                 if(key==actionKey){Message("That key is the repeated action key. Choose another shortcut.");return;}
                 int[] next=(int[])preferences.Hotkeys.Clone();next[which]=binding;
                 if(!RegisterBindings(next)){RegisterBindings(preferences.Hotkeys);Message("Windows or another app is already using that shortcut. Check Settings for a working Stop shortcut before playback.");return;}
-                preferences.Hotkeys=next;UpdateShortcuts();SavePreferences();SetStatus("Shortcuts updated","Your shortcut settings are saved beside Auto Loop.");
+                preferences.Hotkeys=next;UpdateShortcuts();if(SavePreferences())SetStatus("Shortcuts updated","Your shortcut settings are saved beside Auto Loop.");else Message("The new shortcut works now, but it could not be saved and will reset when Auto Loop restarts. Move Auto Loop to a folder you can write to.");
             }}finally{changingShortcuts=previousShortcutState;}
         }
         void UpdateShortcuts(){string[] names={"Start","Record","Pause","Stop all"};for(int i=0;i<4;i++)shortcuts[i].Text=names[i]+": "+KeyName(preferences.Hotkeys[i]);playButton.Text="Start · "+KeyName(preferences.Hotkeys[0]);recordButton.Text="Record · "+KeyName(preferences.Hotkeys[1]);pauseButton.Text="Pause · "+KeyName(preferences.Hotkeys[2]);stopButton.Text="Stop · "+KeyName(preferences.Hotkeys[3]);}
@@ -513,8 +621,8 @@ namespace AutoLoop {
         }
         void ApplyRoutine(Routine r){ValidateRoutine(r);modes.SelectedIndex=r.Mode;interval.Value=r.Interval;hold.Value=r.Hold;repeats.Value=r.Repeat;limit.Value=r.LimitSeconds;actionKey=r.Key;SelectActionKey(actionKey);mouse.SelectedIndex=r.MouseButton;fixedPosition.Checked=r.FixedPosition;px.Value=r.FixedX;py.Value=r.FixedY;lockTarget.Checked=r.LockTarget;autoResume.Checked=r.AutoResume;targets.SelectedIndex=-1;recorded=r.Steps.Select(Clone).ToList();SyncStopDisplay();UpdateEvents();}
         void LoadPreferences(){try{string path=Path.Combine(dataRoot,"settings.xml");if(File.Exists(path)){Preferences p=ReadXml<Preferences>(path);if(p.Hotkeys==null||p.Hotkeys.Length!=4||p.Hotkeys.Select(k=>k&0xFFFF).Distinct().Count()!=4||p.Hotkeys.Any(k=>(k&0xFFFF)<8||(k&0xFFFF)>254||IsModifier(k&0xFFFF)))throw new InvalidDataException();preferences=p;}}catch{preferences=new Preferences();}}
-        void SavePreferences(){try{WriteXml(Path.Combine(dataRoot,"settings.xml"),preferences);}catch(Exception e){detail.Text="Settings could not be saved beside the app: "+e.Message;}}
-        internal void VerifyRoutine(string input,string output){SelfTestMode=true;TestFocus=true;TestTime=0;List<Native.INPUT> sent=new List<Native.INPUT>();InputSink=sent.Add;ApplyRoutine(ReadXml<Routine>(input));if(!ValidatePlayback())throw new InvalidDataException(LastMessage);BeginPlayback();long duration=recorded.Sum(x=>(long)x.Delay),cap=Math.Max(1000,duration)*Math.Max(1,repeatCount)+10000;while(running&&TestTime.Value<cap){TickEngine();TestTime+=10;}if(running)throw new Exception("Routine did not finish");int downs=sent.Count(i=>i.type==0&&(i.u.mi.flags&2)!=0),ups=sent.Count(i=>i.type==0&&(i.u.mi.flags&4)!=0);File.WriteAllLines(output,new string[]{"Engine simulation of supplied routine (no desktop input sent)","Completed repeats: "+completed,"Left mouse presses: "+downs,"Left mouse releases: "+ups,"Held buttons remaining: "+heldMouse.Count,"Held keys remaining: "+heldKeys.Count});}
+        bool SavePreferences(){try{WriteXml(Path.Combine(dataRoot,"settings.xml"),preferences);return true;}catch(Exception e){SetStatus("Settings not saved","Auto Loop could not write settings.xml beside the app. Move it to a folder you can write to. ("+e.Message+")");return false;}}
+        internal void VerifyRoutine(string input,string output){SelfTestMode=true;TestFocus=true;TestTime=0;TestRootAt=point=>IntPtr.Zero;List<Native.INPUT> sent=new List<Native.INPUT>();InputSink=sent.Add;ApplyRoutine(ReadXml<Routine>(input));if(!ValidatePlayback())throw new InvalidDataException(LastMessage);BeginPlayback();long duration=recorded.Sum(x=>(long)x.Delay),cap=Math.Max(1000,duration)*Math.Max(1,repeatCount)+10000;while(running&&TestTime.Value<cap){TickEngine();TestTime+=10;}if(running)throw new Exception("Routine did not finish");int downs=sent.Count(i=>i.type==0&&(i.u.mi.flags&2)!=0),ups=sent.Count(i=>i.type==0&&(i.u.mi.flags&4)!=0);File.WriteAllLines(output,new string[]{"Engine simulation of supplied routine (no desktop input sent)","Completed repeats: "+completed,"Left mouse presses: "+downs,"Left mouse releases: "+ups,"Held buttons remaining: "+heldMouse.Count,"Held keys remaining: "+heldKeys.Count});}
         public void RunInternalTests(string path){SelfTests.Run(this,path);}
         internal bool TestApply(Routine r){ApplyRoutine(r);return CurrentRoutine().Steps.Count==r.Steps.Count;}
         Point PositionInForm(Control control){Point point=Point.Empty;while(control!=null&&control!=this){point.Offset(control.Left,control.Top);control=control.Parent;}return point;}
@@ -522,7 +630,67 @@ namespace AutoLoop {
         internal string[] LayoutDiagnostics(){List<string> lines=new List<string>();Action<Control,int> walk=null;walk=delegate(Control control,int depth){lines.Add(new string(' ',depth*2)+control.GetType().Name+" Text="+control.Text+" Bounds="+control.Bounds+" Visible="+control.Visible);foreach(Control child in control.Controls)walk(child,depth+1);};PerformLayout();walk(this,0);return lines.ToArray();}
         internal void TestEngine(Action<string,Action> check) {
             SelfTestMode=true;TestFocus=true;TestTime=0;List<Native.INPUT> sent=new List<Native.INPUT>();InputSink=sent.Add;
-            Action reset=delegate{StopAll("Test reset");sent.Clear();TestFocus=true;TestTime=0;boundTarget=null;lockTarget.Checked=false;preferences=new Preferences();modes.SelectedIndex=1;actionKey=70;interval.Value=100;hold.Value=30;repeats.Value=3;limit.Value=0;autoResume.Checked=true;};
+            Action reset=delegate{StopAll("Test reset");sent.Clear();TestFocus=true;TestTime=0;boundTarget=null;lockTarget.Checked=false;preferences=new Preferences();modes.SelectedIndex=1;actionKey=70;interval.Value=100;hold.Value=30;repeats.Value=3;limit.Value=0;autoResume.Checked=true;TestRootAt=point=>IntPtr.Zero;TestElevated=null;};
+            Func<IntPtr,Native.POINT,int,int> mouseEvent=delegate(IntPtr buffer,Native.POINT point,int msg){Marshal.StructureToPtr(new Native.MOUSE{pt=point},buffer,false);MouseHook(0,new IntPtr(msg),buffer);return recorded.Count;};
+            Action<int,int> keyEvent=delegate(int key,int msg){IntPtr buffer=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Native.KBD)));try{Marshal.StructureToPtr(new Native.KBD{vkCode=(uint)key},buffer,false);KeyboardHook(0,new IntPtr(msg),buffer);}finally{Marshal.FreeHGlobal(buffer);}};
+            WindowChoice fakeTarget=new WindowChoice{Handle=new IntPtr(0x7A11),Process=uint.MaxValue-1,Title="Fake target"};
+            check("Recording ignores clicks on Auto Loop, such as the Record button",()=>{
+                reset();BeginRecording();TestRootAt=point=>Handle;IntPtr p=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Native.MOUSE)));
+                try{mouseEvent(p,new Native.POINT{X=5,Y=5},0x200);mouseEvent(p,new Native.POINT{X=5,Y=5},0x201);TestTime=40;mouseEvent(p,new Native.POINT{X=5,Y=5},0x202);}finally{Marshal.FreeHGlobal(p);}
+                if(recorded.Count!=0)throw new Exception("Auto Loop click recorded: "+string.Join(",",recorded.Select(s=>s.Kind)));FinishRecording();
+            });
+            check("Selected app recording ignores presses outside the target but keeps drag releases",()=>{
+                reset();BeginRecording();boundTarget=fakeTarget;IntPtr p=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Native.MOUSE)));
+                try{
+                    TestRootAt=point=>new IntPtr(0x5150);mouseEvent(p,new Native.POINT{X=1,Y=1},0x201);mouseEvent(p,new Native.POINT{X=1,Y=1},0x20A);
+                    if(recorded.Count!=0)throw new Exception("Press outside target recorded");
+                    TestRootAt=point=>fakeTarget.Handle;mouseEvent(p,new Native.POINT{X=2,Y=2},0x201);
+                    TestRootAt=point=>new IntPtr(0x5150);TestTime=50;mouseEvent(p,new Native.POINT{X=900,Y=900},0x202);
+                    if(recorded.Count!=4||recorded[3].Kind!="MouseUp"||recorded[2].X!=900)throw new Exception("Drag release outside target lost");
+                }finally{Marshal.FreeHGlobal(p);boundTarget=null;}
+                FinishRecording();ValidateSteps(recorded,true);
+            });
+            check("Focus-switching keys are trimmed and timing is kept",()=>{
+                reset();BeginRecording();keyEvent(70,0x100);TestTime=50;keyEvent(70,0x101);
+                TestTime=1000;keyEvent(18,0x104);TestTime=1010;keyEvent(9,0x104);
+                TestFocus=false;TestTime=1020;TickEngine();TestFocus=true;TestTime=1500;TickEngine();TestTime=2000;FinishRecording();
+                if(recorded.Any(s=>s.Code==18||s.Code==9))throw new Exception("Alt+Tab kept: "+string.Join(",",recorded.Select(s=>s.Kind+":"+s.Code)));
+                if(recorded.Count<2||recorded[1].Kind!="KeyUp"||recorded.Sum(s=>(long)s.Delay)<1010)throw new Exception("Timing lost: "+string.Join(",",recorded.Select(s=>s.Kind+":"+s.Delay)));
+                ValidateSteps(recorded,true);
+            });
+            check("Focus loss keeps earlier held keys balanced",()=>{
+                reset();BeginRecording();keyEvent(16,0x100);TestTime=990;TickEngine();TestTime=1000;TestFocus=false;TickEngine();TestFocus=true;TestTime=1100;FinishRecording();
+                if(recorded.Count!=2||recorded[0].Code!=16||recorded[1].Kind!="KeyUp")throw new Exception("Long-held key dropped");ValidateSteps(recorded,true);
+            });
+            check("Playback pauses instead of clicking outside the selected app",()=>{
+                reset();modes.SelectedIndex=0;boundTarget=fakeTarget;TestRootAt=point=>new IntPtr(0x5150);
+                try{
+                    BeginPlayback();TickEngine();TestTime=10;TickEngine();
+                    if(sent.Count!=0||!userPaused||status.Text!="Paused: pointer is outside the selected app")throw new Exception("Click sent outside target; status="+status.Text);
+                    TestRootAt=point=>fakeTarget.Handle;TestTime=500;TickEngine();if(sent.Count!=0)throw new Exception("Resumed without the user");
+                    TogglePause();TestTime=510;TickEngine();TestTime=600;TickEngine();
+                    if(sent.Count==0||(sent[0].u.mi.flags&2)==0)throw new Exception("Click missing after resume");
+                }finally{boundTarget=null;StopAll("Done");}
+            });
+            check("Fixed-position click checks the moved-to point, not the stale cursor",()=>{
+                reset();modes.SelectedIndex=0;boundTarget=fakeTarget;fixedPosition.Checked=true;px.Value=-12345;py.Value=-6789;
+                TestRootAt=point=>point.X==-12345&&point.Y==-6789?fakeTarget.Handle:new IntPtr(0x5150);
+                try{BeginPlayback();TickEngine();if(userPaused||!sent.Any(i=>i.type==0&&(i.u.mi.flags&2)!=0))throw new Exception("Click at fixed target position was blocked");}
+                finally{boundTarget=null;fixedPosition.Checked=false;px.Value=0;py.Value=0;StopAll("Done");}
+            });
+            check("Administrator target is rejected with an explanation",()=>{
+                reset();TestElevated=process=>true;lockTarget.Checked=true;WindowChoice self=new WindowChoice{Handle=Handle,Process=ownProcess,Title="Admin app"};targets.Items.Add(self);targets.SelectedItem=self;
+                try{if(BindTarget()||!LastMessage.Contains("administrator"))throw new Exception("Elevated target accepted");TestElevated=process=>false;if(!BindTarget())throw new Exception("Normal target rejected");}
+                finally{targets.Items.Remove(self);boundTarget=null;lockTarget.Checked=false;}
+            });
+            check("Settings save failure is shown",()=>{
+                reset();string previous=dataRoot;dataRoot=Path.Combine(previous,"missing-"+Guid.NewGuid().ToString("N"),"x");
+                try{if(SavePreferences()||status.Text!="Settings not saved")throw new Exception("Failure hidden");}finally{dataRoot=previous;}
+            });
+            check("File version matches product version",()=>{
+                var info=FileVersionInfo.GetVersionInfo(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                if(info.FileVersion!=System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString())throw new Exception(info.FileVersion);
+            });
             check("Engine repeats exactly and respects interval",()=>{reset();BeginPlayback();TickEngine();if(sent.Count!=1)throw new Exception("Missing initial down");TestTime=30;TickEngine();if(sent.Count!=2)throw new Exception("Missing release");TestTime=100;TickEngine();if(sent.Count!=3)throw new Exception("Repeat did not start at interval");TestTime=130;TickEngine();TestTime=200;TickEngine();TestTime=230;TickEngine();TestTime=300;TickEngine();if(running||sent.Count!=6||completed!=3)throw new Exception("Incorrect repeat total");});
             check("Stop releases a held key",()=>{reset();BeginPlayback();TickEngine();StopAll("Test stop");if(sent.Count!=2||sent[1].u.ki.flags!=2||heldKeys.Count!=0||running)throw new Exception("Key remained down");});
             check("Playback cannot minimize without a global Stop shortcut",()=>{
@@ -566,8 +734,8 @@ namespace AutoLoop {
             check("Mouse hook preserves drag release position",()=>{reset();BeginRecording();IntPtr p=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Native.MOUSE)));try{Native.MOUSE m=new Native.MOUSE{pt=new Native.POINT{X=10,Y=20}};Marshal.StructureToPtr(m,p,false);MouseHook(0,new IntPtr(0x201),p);TestTime=5;m.pt.X=100;m.pt.Y=200;Marshal.StructureToPtr(m,p,false);MouseHook(0,new IntPtr(0x202),p);if(recorded.Count!=4||recorded[2].Kind!="Move"||recorded[2].X!=100||recorded[3].Kind!="MouseUp")throw new Exception("Endpoint lost");}finally{Marshal.FreeHGlobal(p);}FinishRecording();ValidateSteps(recorded,true);});
             check("Recorded double-click replays both button pairs",()=>{reset();BeginRecording();IntPtr p=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Native.MOUSE)));try{Marshal.StructureToPtr(new Native.MOUSE{pt=new Native.POINT{X=100,Y=200}},p,false);MouseHook(0,new IntPtr(0x201),p);TestTime=40;MouseHook(0,new IntPtr(0x202),p);TestTime=120;MouseHook(0,new IntPtr(0x201),p);TestTime=160;MouseHook(0,new IntPtr(0x202),p);}finally{Marshal.FreeHGlobal(p);}FinishRecording();ValidateSteps(recorded,true);repeats.Value=1;TestTime=0;BeginPlayback();TickEngine();foreach(long t in new long[]{40,120,160,200}){TestTime=t;TickEngine();}uint[] buttons=sent.Where(i=>i.type==0&&(i.u.mi.flags&6)!=0).Select(i=>i.u.mi.flags).ToArray();if(!buttons.SequenceEqual(new uint[]{2,4,2,4})||running)throw new Exception("Double-click button events lost: "+string.Join(",",buttons)+"; running="+running+"; due="+due+"; steps="+string.Join(",",recorded.Select(x=>x.Kind+":"+x.Delay)));});
             check("Playback minimizes only after validation; recording stays visible",()=>{reset();stopHotkeyRegistered=true;WindowState=FormWindowState.Normal;lockTarget.Checked=false;modes.SelectedIndex=1;StartCountdown(false);if(!pendingPlay||WindowState!=FormWindowState.Minimized)throw new Exception("Playback did not minimize");StopAll("Test stop");WindowState=FormWindowState.Normal;modes.SelectedIndex=2;recorded.Clear();StartCountdown(false);if(pendingPlay||WindowState!=FormWindowState.Normal)throw new Exception("Invalid playback minimized");reset();WindowState=FormWindowState.Normal;lockTarget.Checked=false;IntPtr oldKeyboard=keyboardHook,oldMouse=mouseHook;try{keyboardHook=mouseHook=new IntPtr(1);StartCountdown(true);if(!pendingRecord||WindowState!=FormWindowState.Normal)throw new Exception("Recording unexpectedly minimized");}finally{keyboardHook=oldKeyboard;mouseHook=oldMouse;StopAll("Test stop");}});
-            check("App scope switch shows and hides picker without losing target",()=>{reset();lockTarget.Checked=true;PerformLayout();if(ClientSize!=new Size(400,587)||!targets.Parent.Visible&&Visible)throw new Exception("Selected app controls missing");lockTarget.Checked=false;PerformLayout();if(ClientSize!=new Size(400,512)||targets.Parent.Visible)throw new Exception("Any app did not collapse picker");if(!BindTarget()||boundTarget!=null)throw new Exception("Any app requires a target");});
-            check("Option 2 keeps app scope inside the configuration panel",()=>{reset();if(targets.Parent.Parent.Parent!=optionGrid.Parent)throw new Exception("App selector is outside the main panel");});
+            check("App scope switch shows and hides picker without losing target",()=>{reset();lockTarget.Checked=true;PerformLayout();if(ClientSize!=new Size(UiScale.Px(400),UiScale.Px(587))||!targets.Parent.Visible&&Visible)throw new Exception("Selected app controls missing");lockTarget.Checked=false;PerformLayout();if(ClientSize!=new Size(UiScale.Px(400),UiScale.Px(512))||targets.Parent.Visible)throw new Exception("Any app did not collapse picker");if(!BindTarget()||boundTarget!=null)throw new Exception("Any app requires a target");});
+            check("App picker stays inside the configuration panel",()=>{reset();if(targets.Parent.Parent.Parent!=optionGrid.Parent)throw new Exception("App selector is outside the main panel");});
             check("Key capture matches mouse field geometry",()=>{reset();if(keyCapture.Bounds!=mouse.Bounds||keyCapture.Font.Size!=mouse.Font.Size||keyCapture.TextAlign!=ContentAlignment.MiddleLeft)throw new Exception("Key field differs from mouse field");});
             check("Action controls fit equally and status is below them",()=>{reset();PerformLayout();Control actions=playButton.Parent;foreach(Control button in actions.Controls){if(Math.Abs(button.Width-playButton.Width)>6||button.Height!=playButton.Height||button.Right>actions.Width||button.Bottom>actions.Height)throw new Exception("Action button size or clipping");}if(PositionInForm(status).Y<PositionInForm(playButton).Y+playButton.Height)throw new Exception("Status is above actions");});
             check("Test once ignores repeat and duration settings without changing them",()=>{reset();repeats.Value=10;limit.Value=1;BeginPlayback(true);TickEngine();TestTime=30;TickEngine();TestTime=100;TickEngine();if(running||completed!=1||sent.Count!=2||repeats.Value!=10||limit.Value!=1)throw new Exception("Single-run behavior or saved settings changed");});
@@ -577,21 +745,21 @@ namespace AutoLoop {
             check("Recording toolbar captions fit without ellipsis",()=>{reset();modes.SelectedIndex=2;PerformLayout();recordingTools.PerformLayout();foreach(Control button in recordingTools.Controls)if(TextRenderer.MeasureText(button.Text,button.Font).Width>button.Width-20)throw new Exception("Truncated toolbar caption: "+button.Text);});
             check("Recorded control shortcut conflict is rejected",()=>{reset();modes.SelectedIndex=2;recorded=new List<Step>{new Step{Kind="KeyDown",Code=120},new Step{Kind="KeyUp",Code=120,Delay=20}};if(ValidatePlayback())throw new Exception("Stop shortcut accepted as playback");});
             check("Plain letter does not conflict with modified shortcut",()=>{reset();preferences.Hotkeys[0]=(int)(Keys.Control|Keys.S);modes.SelectedIndex=2;recorded=new List<Step>{new Step{Kind="KeyDown",Code=83},new Step{Kind="KeyUp",Code=83,Delay=20}};if(!ValidatePlayback())throw new Exception("Plain letter incorrectly blocked");});
-            check("Click and Keys keep the same compact size",()=>{reset();for(int i=0;i<20;i++){modes.SelectedIndex=i%2;PerformLayout();if(ClientSize!=new Size(400,512))throw new Exception("Mode changed compact size");}});
+            check("Click and Keys keep the same compact size",()=>{reset();for(int i=0;i<20;i++){modes.SelectedIndex=i%2;PerformLayout();if(ClientSize!=new Size(UiScale.Px(400),UiScale.Px(512)))throw new Exception("Mode changed compact size");}});
             check("Every alphabet key is selectable",()=>{reset();for(int key=65;key<=90;key++){SelectActionKey(key);if(actionKey!=key||((KeyChoice)keyChoices.SelectedItem).Code!=key)throw new Exception("Key selection failed");}});
-            check("Record toolbar fits without clipped buttons",()=>{reset();modes.SelectedIndex=2;PerformLayout();compactRoot.PerformLayout();recordingHost.PerformLayout();recordingTools.PerformLayout();if(recordingTools.Controls.Count!=4)throw new Exception("Missing editing tools");foreach(Control control in recordingTools.Controls)if(control.Bottom>recordingTools.ClientSize.Height||control.Height<30||control.Width<50)throw new Exception("Clipped recording tool");modes.SelectedIndex=0;if(ClientSize.Height!=512)throw new Exception("Record size did not restore");});
+            check("Record toolbar fits without clipped buttons",()=>{reset();modes.SelectedIndex=2;PerformLayout();compactRoot.PerformLayout();recordingHost.PerformLayout();recordingTools.PerformLayout();if(recordingTools.Controls.Count!=4)throw new Exception("Missing editing tools");foreach(Control control in recordingTools.Controls)if(control.Bottom>recordingTools.ClientSize.Height||control.Height<30||control.Width<50)throw new Exception("Clipped recording tool");modes.SelectedIndex=0;if(ClientSize.Height!=UiScale.Px(512))throw new Exception("Record size did not restore");});
             check("Nested modal scope preserves shortcut suppression",()=>{reset();changingShortcuts=false;using(ModalScope outer=new ModalScope(this)){using(ModalScope inner=new ModalScope(this)){}if(!changingShortcuts)throw new Exception("Nested guard restored too early");System.Windows.Forms.Message message=System.Windows.Forms.Message.Create(Handle,0x312,new IntPtr(100),IntPtr.Zero);WndProc(ref message);if(pendingPlay)throw new Exception("Shortcut started during modal");}if(changingShortcuts)throw new Exception("Guard remained enabled");});
-            check("Loop Arrow logo is embedded",()=>{using(Stream resource=System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("AutoLoop.Logo")){if(resource==null||resource.Length==0)throw new Exception("Logo resource missing");}});
+            check("Logo is embedded",()=>{using(Stream resource=System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("AutoLoop.Logo")){if(resource==null||resource.Length==0)throw new Exception("Logo resource missing");}});
             check("Stop after repeat count updates engine",()=>{reset();stopRule.SelectedIndex=0;stopValue.Value=7;if(repeats.Value!=7||limit.Value!=0)throw new Exception("Count did not reach engine");});
             check("Stop after duration updates engine",()=>{reset();stopRule.SelectedIndex=1;stopValue.Value=5;if(repeats.Value!=0||limit.Value!=5)throw new Exception("Duration did not reach engine");});
             check("Until stopped clears both limits",()=>{reset();stopRule.SelectedIndex=2;if(repeats.Value!=0||limit.Value!=0)throw new Exception("Limits remained active");});
             check("Imported dual limits remain accurate and cannot become stale",()=>{reset();repeats.Value=10;limit.Value=2;SyncStopDisplay();if(stopRule.SelectedIndex!=3||repeats.Value!=10||limit.Value!=2)throw new Exception("Dual limits lost");stopRule.SelectedIndex=2;if(stopRule.Items.Count!=3||repeats.Value!=0||limit.Value!=0)throw new Exception("Stale legacy option remained");});
-            check("All three tabs preserve window size",()=>{reset();for(int i=0;i<15;i++){modes.SelectedIndex=i%3;PerformLayout();if(ClientSize!=new Size(400,512))throw new Exception("Tab resized the window");}});
-            check("Approved control styling is installed",()=>{reset();if(!(modeTabs[0] is RoundedButton)||!(status is StatusLabel)||!(targets is DarkComboBox)||!(lockTarget is MintCheckBox))throw new Exception("A themed control is missing");});
+            check("All three tabs preserve window size",()=>{reset();for(int i=0;i<15;i++){modes.SelectedIndex=i%3;PerformLayout();if(ClientSize!=new Size(UiScale.Px(400),UiScale.Px(512)))throw new Exception("Tab resized the window");}});
+            check("Themed controls are installed",()=>{reset();if(!(modeTabs[0] is RoundedButton)||!(status is StatusLabel)||!(targets is DarkComboBox)||!(lockTarget is MintCheckBox))throw new Exception("A themed control is missing");});
             check("Typed numeric input reaches the engine value",()=>{using(NumberBox number=new NumberBox{Minimum=10,Maximum=1000,Value=100}){TextBox text=number.Controls.OfType<TextBox>().Single();text.Text="250";if(number.Value!=250)throw new Exception("Typed value not committed");text.Text="9000";if(number.Value!=1000)throw new Exception("Out-of-range value not bounded");text.Text="";if(number.Value!=1000)throw new Exception("Blank entry lost prior value");}});
             check("Negative coordinates remain editable",()=>{using(NumberBox number=new NumberBox{Minimum=-100000,Maximum=100000,Value=0}){number.Controls.OfType<TextBox>().Single().Text="-1234";if(number.Value!=-1234)throw new Exception("Negative position lost");}});
-            check("Interval and Stop after share the reference input column",()=>{reset();for(int mode=0;mode<2;mode++){modes.SelectedIndex=mode;PerformLayout();compactRoot.PerformLayout();optionGrid.PerformLayout();Control stopField=stopValue.Parent.Parent;if(PositionInForm(interval).X!=PositionInForm(stopField).X)throw new Exception("Input fields are misaligned");if(interval.Width<140)throw new Exception("Interval width differs from reference");if(PositionInForm(interval.Controls.OfType<TextBox>().Single()).X!=PositionInForm(stopValue.Controls.OfType<TextBox>().Single()).X)throw new Exception("Input text is misaligned");Label intervalCaption=interval.Parent.Controls.OfType<Label>().First(c=>c.Text=="Interval");TableLayoutPanel stopRow=stopField.Parent as TableLayoutPanel;Control stopCaption=stopRow.GetControlFromPosition(0,0);if(PositionInForm(intervalCaption).X!=PositionInForm(stopCaption).X||intervalCaption.ForeColor!=stopCaption.ForeColor)throw new Exception("Row captions differ in alignment or color");}});
-            reset();InputSink=null;TestFocus=null;TestTime=null;
+            check("Interval and Stop after share the reference input column",()=>{reset();for(int mode=0;mode<2;mode++){modes.SelectedIndex=mode;PerformLayout();compactRoot.PerformLayout();optionGrid.PerformLayout();Control stopField=stopValue.Parent.Parent;if(PositionInForm(interval).X!=PositionInForm(stopField).X)throw new Exception("Input fields are misaligned");if(interval.Width<UiScale.Px(140))throw new Exception("Interval width differs from reference");if(PositionInForm(interval.Controls.OfType<TextBox>().Single()).X!=PositionInForm(stopValue.Controls.OfType<TextBox>().Single()).X)throw new Exception("Input text is misaligned");Label intervalCaption=interval.Parent.Controls.OfType<Label>().First(c=>c.Text=="Interval");TableLayoutPanel stopRow=stopField.Parent as TableLayoutPanel;Control stopCaption=stopRow.GetControlFromPosition(0,0);if(PositionInForm(intervalCaption).X!=PositionInForm(stopCaption).X||intervalCaption.ForeColor!=stopCaption.ForeColor)throw new Exception("Row captions differ in alignment or color");}});
+            reset();InputSink=null;TestFocus=null;TestTime=null;TestRootAt=null;
         }
     }
     internal static class SelfTests {
@@ -613,12 +781,14 @@ namespace AutoLoop {
     }
     static class Program {
         [STAThread] static void Main(string[] args) {
-            Native.SetProcessDPIAware();Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
+            Native.EnableDpiAwareness();UiScale.Init();Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
+            float previewScale;
+            if(args.Length==3&&args[0]=="--preview"&&float.TryParse(args[2],System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out previewScale)&&previewScale>=1f&&previewScale<=3f){UiScale.Simulated=previewScale;using(MainForm form=new MainForm()){form.SelfTestMode=true;form.SavePreviews(args[1]);}return;}
             if(args.Length==3&&args[0]=="--verify-routine"){using(MainForm form=new MainForm()){form.SelfTestMode=true;form.VerifyRoutine(args[1],args[2]);}return;}
             if(args.Length==2&&args[0]=="--self-test"){using(MainForm testForm=new MainForm()){testForm.SelfTestMode=true;testForm.RunInternalTests(args[1]);}return;}
             using(var mutex=new System.Threading.Mutex(false,"Local\\AutoLoopPortableSingleInstance")){
                 if(!mutex.WaitOne(0,false)){MessageBox.Show("Auto Loop is already open.","Auto Loop");return;}
-                try{MainForm form=new MainForm();if(args.Length==2&&args[0]=="--self-test"){form.SelfTestMode=true;form.RunInternalTests(args[1]);form.Dispose();return;}Application.Run(form);}finally{mutex.ReleaseMutex();}
+                try{Application.Run(new MainForm());}finally{mutex.ReleaseMutex();}
             }
         }
     }

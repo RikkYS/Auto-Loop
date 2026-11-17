@@ -1,0 +1,56 @@
+name: Bug report
+description: Something in Auto Loop doesn't work as expected
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Auto Loop version
+      placeholder: "0.6.1"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version and display scaling
+      placeholder: "Windows 11 24H2, 150%, two monitors"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options: [Click, Keys, Record & replay]
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Run in
+      options: [Any app, Selected app]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Choose Click, interval 500 ms, Stop after 5 repeats
+        2. Selected app: Notepad
+        3. Press Start
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected and what happened
+    validations:
+      required: true
+  - type: textarea
+    id: message
+    attributes:
+      label: Exact message or status text (if any)
+      description: Also say whether the target app was running as administrator.
+  - type: markdown
+    attributes:
+      value: "If you attach a .autoloop routine, check it first: it contains the keys you pressed."

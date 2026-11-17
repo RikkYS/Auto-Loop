@@ -7,8 +7,21 @@ PASS Reject unknown action
 PASS Extended key flags
 PASS Mouse release flags
 PASS Virtual desktop coordinates
+PASS Recording ignores clicks on Auto Loop, such as the Record button
+PASS Selected app recording ignores presses outside the target but keeps drag releases
+PASS Focus-switching keys are trimmed and timing is kept
+PASS Focus loss keeps earlier held keys balanced
+PASS Playback pauses instead of clicking outside the selected app
+PASS Fixed-position click checks the moved-to point, not the stale cursor
+PASS Administrator target is rejected with an explanation
+PASS Settings save failure is shown
+PASS File version matches product version
 PASS Engine repeats exactly and respects interval
 PASS Stop releases a held key
+PASS Playback cannot minimize without a global Stop shortcut
+PASS Failed key and mouse releases remain tracked until retry
+PASS Delayed tick preserves hold from actual press
+PASS Recording reserves releases and rejects a partial mouse event at the limit
 PASS Focus loss releases and pauses; returning resumes
 PASS Automatic resume can be disabled
 PASS Time limit stops and releases
@@ -20,7 +33,7 @@ PASS Mouse hook preserves drag release position
 PASS Recorded double-click replays both button pairs
 PASS Playback minimizes only after validation; recording stays visible
 PASS App scope switch shows and hides picker without losing target
-PASS Option 2 keeps app scope inside the configuration panel
+PASS App picker stays inside the configuration panel
 PASS Key capture matches mouse field geometry
 PASS Action controls fit equally and status is below them
 PASS Test once ignores repeat and duration settings without changing them
@@ -34,13 +47,13 @@ PASS Click and Keys keep the same compact size
 PASS Every alphabet key is selectable
 PASS Record toolbar fits without clipped buttons
 PASS Nested modal scope preserves shortcut suppression
-PASS Loop Arrow logo is embedded
+PASS Logo is embedded
 PASS Stop after repeat count updates engine
 PASS Stop after duration updates engine
 PASS Until stopped clears both limits
 PASS Imported dual limits remain accurate and cannot become stale
 PASS All three tabs preserve window size
-PASS Approved control styling is installed
+PASS Themed controls are installed
 PASS Typed numeric input reaches the engine value
 PASS Negative coordinates remain editable
 PASS Interval and Stop after share the reference input column
