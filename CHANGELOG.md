@@ -8,6 +8,7 @@ A polished look; same size, layout and behavior.
 - The window now shows the **real Auto Loop logo**, the same artwork as the EXE icon, tray icon and GitHub banner.
 - The selected tab, the selected "Any app"/"Selected app" choice and the **Start** button use the logo's mint-to-teal gradient, so the main action stands out.
 - **New countdown**: a smooth progress ring with a soft shadow that drains each second around the number, which pops in. Its edges are fully smooth and clicks still pass through it.
+- Text in the Stop after box, the dropdowns and the key box is now centered vertically (the Stop after unit sat up to 7 px low).
 - 77 built-in checks (up from 76).
 
 ## 0.7.1 (2026-11-18)
