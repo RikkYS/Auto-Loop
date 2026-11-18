@@ -12,8 +12,8 @@ using System.Xml.Serialization;
 
 [assembly: System.Reflection.AssemblyTitle("Auto Loop")]
 [assembly: System.Reflection.AssemblyProduct("Auto Loop")]
-[assembly: System.Reflection.AssemblyVersion("0.7.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.7.0.0")]
+[assembly: System.Reflection.AssemblyVersion("0.7.1.0")]
+[assembly: System.Reflection.AssemblyFileVersion("0.7.1.0")]
 namespace AutoLoop {
     public class Step {
         public string Kind = "Wait";
@@ -69,6 +69,7 @@ namespace AutoLoop {
         [DllImport("user32.dll")] public static extern bool ReleaseCapture();
         [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr window,int message,IntPtr wParam,IntPtr lParam);
         [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
+        [DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint flags);
         [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT point);
         [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr window, uint flags);
         [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr value);
@@ -97,7 +98,8 @@ namespace AutoLoop {
         public static uint ProcessId(IntPtr window) { uint p; GetWindowThreadProcessId(window,out p); return p; }
         public static bool Extended(int key) { return (MapVirtualKey((uint)key,4) & 0xFF00) != 0; }
         public static INPUT Key(int key, bool up, bool extended) {
-            INPUT i = new INPUT(); i.type=1; i.u.ki.vk=(ushort)key; i.u.ki.flags=(up?2u:0u)|(extended?1u:0u); return i;
+            // The hardware scan code goes with the virtual key: games and apps that read raw input ignore keys without one.
+            INPUT i = new INPUT(); i.type=1; i.u.ki.vk=(ushort)key; i.u.ki.scan=(ushort)(MapVirtualKey((uint)key,0)&0xFF); i.u.ki.flags=(up?2u:0u)|(extended?1u:0u); return i;
         }
         public static INPUT Mouse(int button, bool up) {
             INPUT i=new INPUT(); uint flag=0;
@@ -124,18 +126,24 @@ namespace AutoLoop {
         public override string ToString(){return MainForm.KeyName(Code);}
     }
     internal class ShortcutDialog : ThemedDialog {
-        public int Binding; Label value;
-        public ShortcutDialog(string title, int current) {
+        public int Binding; Label value; readonly bool escapeCancels;
+        // escapeCancels: for global shortcuts Esc closes the dialog; when choosing the key to repeat, Esc is a valid choice.
+        public ShortcutDialog(string title, int current, bool escapeCancels=false) {
+            this.escapeCancels=escapeCancels;
             Text=title; ClientSize=new Size(420,230); StartPosition=FormStartPosition.CenterParent;
             MaximizeBox=false; MinimizeBox=false; KeyPreview=true; Font=new Font("Segoe UI",10); Binding=current;
-            Label hint=new Label{Text="Press your key, then choose Use.",Dock=DockStyle.Top,Height=40,Padding=new Padding(6)};
+            Label hint=new Label{Text=escapeCancels?"Press your key, then choose Use. Esc cancels.":"Press a key or a combination like Ctrl+C, then choose Use.",Dock=DockStyle.Top,Height=40,Padding=new Padding(6)};
             value=new Label{Text=MainForm.KeyName(current),Dock=DockStyle.Top,Height=42,TextAlign=ContentAlignment.MiddleCenter,Font=new Font("Segoe UI",16,FontStyle.Bold)};
             FlowLayoutPanel row=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=45,FlowDirection=FlowDirection.RightToLeft};
             Button ok=new RoundedButton{Text="Use",DialogResult=DialogResult.OK,Width=90,Height=34,BackColor=Color.FromArgb(36,91,82),ForeColor=Color.FromArgb(103,241,173)}; Button cancel=new RoundedButton{Text="Cancel",DialogResult=DialogResult.Cancel,Width=90,Height=34,BackColor=Color.FromArgb(30,36,48),ForeColor=ForeColor};
             row.Controls.Add(ok); row.Controls.Add(cancel); Controls.Add(value); Controls.Add(hint); Controls.Add(row); CancelButton=cancel;
-            KeyDown+=delegate(object s,KeyEventArgs e){ e.SuppressKeyPress=true; if(MainForm.IsModifier((int)e.KeyCode)) return; Binding=(int)e.KeyData; value.Text=MainForm.KeyName(Binding); };
         }
-        protected override bool ProcessCmdKey(ref System.Windows.Forms.Message message,Keys keyData){int key=(int)(keyData&Keys.KeyCode);if(!MainForm.IsModifier(key)){Binding=(int)keyData;value.Text=MainForm.KeyName(Binding);}return true;}
+        // Every key press arrives here first, including Enter, Tab and Alt combinations, so they can be chosen as keys.
+        protected override bool ProcessCmdKey(ref System.Windows.Forms.Message message,Keys keyData){
+            if(escapeCancels&&keyData==Keys.Escape){DialogResult=DialogResult.Cancel;return true;}
+            int key=(int)(keyData&Keys.KeyCode);if(!MainForm.IsModifier(key)){Binding=(int)keyData;value.Text=MainForm.KeyName(Binding);}return true;
+        }
+        internal bool PressForTest(Keys keyData){System.Windows.Forms.Message message=new System.Windows.Forms.Message();return ProcessCmdKey(ref message,keyData);}
     }
     internal class RoundedPanel : Panel {
         public RoundedPanel(){DoubleBuffered=true;}
@@ -184,6 +192,11 @@ namespace AutoLoop {
         const int FocusSwitchWindowMs=250;
         public static string KeyName(int key) { return new KeysConverter().ConvertToString((Keys)key); }
         public static bool IsModifier(int k) { return k==16||k==17||k==18||k==91||k==92||k==160||k==161||k==162||k==163||k==164||k==165; }
+        // Gap between the two clicks of a double click: well inside Windows' double-click time.
+        internal const int DoubleClickGap=40;
+        // A key to repeat: one non-modifier key, optionally with Ctrl, Shift and/or Alt.
+        internal static bool ValidActionKey(int binding){int main=binding&0xFFFF,mods=binding&~0xFFFF;return main>=8&&main<=254&&!IsModifier(main)&&(mods&~(int)(Keys.Control|Keys.Shift|Keys.Alt))==0;}
+        internal static List<int> ActionModifiers(int binding){List<int> keys=new List<int>();if((binding&(int)Keys.Control)!=0)keys.Add(17);if((binding&(int)Keys.Shift)!=0)keys.Add(16);if((binding&(int)Keys.Alt)!=0)keys.Add(18);return keys;}
         protected override void OnResize(EventArgs e){base.OnResize(e);if(FormBorderStyle==FormBorderStyle.None&&Width>30&&Height>30)using(var path=UiDrawing.Round(new Rectangle(0,0,Width,Height),10)){Region old=Region;Region=new Region(path);if(old!=null)old.Dispose();}}
         protected override void OnPaint(PaintEventArgs e){base.OnPaint(e);if(FormBorderStyle==FormBorderStyle.None)using(var path=UiDrawing.Round(new Rectangle(0,0,Width-1,Height-1),10))using(Pen border=new Pen(Color.FromArgb(57,73,89)))e.Graphics.DrawPath(border,path);}
         public MainForm() {
@@ -192,7 +205,7 @@ namespace AutoLoop {
             dataRoot=AppDomain.CurrentDomain.BaseDirectory;
             BuildUi(); LoadPreferences(); RefreshWindows(); UpdateShortcuts(); RestoreLastSettings(); WireHints();
             timer=new System.Windows.Forms.Timer{Interval=10}; timer.Tick+=delegate{TickEngine();};
-            Shown+=delegate { if(SelfTestMode)return;InstallHooks(); if(!RegisterBindings(preferences.Hotkeys)){int[] fallback={(int)(Keys.Control|Keys.Alt|Keys.F6),(int)(Keys.Control|Keys.Alt|Keys.F7),(int)(Keys.Control|Keys.Alt|Keys.F8),(int)(Keys.Control|Keys.Alt|Keys.F9)};if(RegisterBindings(fallback)){preferences.Hotkeys=fallback;UpdateShortcuts();SetStatus("Ready","Some function keys were in use. Shortcuts now use Ctrl + Alt; you can change them below.");}else RegisterBindings(preferences.Hotkeys);} timer.Start(); };
+            Shown+=delegate { if(SelfTestMode)return;if(!RegisterBindings(preferences.Hotkeys)){int[] fallback={(int)(Keys.Control|Keys.Alt|Keys.F6),(int)(Keys.Control|Keys.Alt|Keys.F7),(int)(Keys.Control|Keys.Alt|Keys.F8),(int)(Keys.Control|Keys.Alt|Keys.F9)};if(RegisterBindings(fallback)){preferences.Hotkeys=fallback;UpdateShortcuts();SetStatus("Ready","Some function keys were in use. Shortcuts now use Ctrl + Alt; you can change them below.");}else RegisterBindings(preferences.Hotkeys);} timer.Start(); };
             FormClosing+=delegate(object sender,FormClosingEventArgs e) {
                 StopAll("Stopped");
                 if(e.CloseReason==CloseReason.UserClosing&&(heldKeys.Count>0||heldMouse.Count>0)){
@@ -234,12 +247,12 @@ namespace AutoLoop {
             RoundedPanel configuration=new RoundedPanel{Dock=DockStyle.Fill,BackColor=card,Padding=new Padding(14,10,14,10),Margin=new Padding(0,0,0,8)};compactRoot.Controls.Add(configuration,0,2);
             optionGrid=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,Margin=new Padding(0)};optionGrid.RowStyles.Add(new RowStyle(SizeType.Percent,100));optionGrid.RowStyles.Add(new RowStyle(SizeType.Absolute,62));configuration.Controls.Add(optionGrid);
             Panel normalHost=new Panel{Dock=DockStyle.Fill,Margin=new Padding(0),Size=new Size(480,264)};Label actionLabel=new Label{Text="Mouse button",AutoSize=true,ForeColor=ink,Location=new Point(0,28)};normalHost.Controls.Add(actionLabel);
-            mouse=StyledCombo(380);mouse.Items.AddRange(new object[]{"Left click","Right click","Middle click"});mouse.SelectedIndex=0;mouse.Location=new Point(174,17);mouse.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;mouse.Width=306;normalHost.Controls.Add(mouse);
-            keyChoices=StyledCombo(380);keyChoices.Location=mouse.Location;keyChoices.Size=mouse.Size;keyChoices.Anchor=mouse.Anchor;keyChoices.Visible=false;List<int> choiceCodes=new List<int>();for(int key=65;key<=90;key++)choiceCodes.Add(key);for(int key=48;key<=57;key++)choiceCodes.Add(key);for(int key=112;key<=135;key++)choiceCodes.Add(key);for(int key=96;key<=105;key++)choiceCodes.Add(key);choiceCodes.AddRange(new int[]{32,13,9,8,27,37,38,39,40,45,46,36,35,33,34,106,107,109,110,111});foreach(int code in choiceCodes)keyChoices.Items.Add(new KeyChoice{Code=code});SelectActionKey(actionKey);keyChoices.SelectedIndexChanged+=delegate{if(keyChoices.SelectedItem is KeyChoice)actionKey=((KeyChoice)keyChoices.SelectedItem).Code;};keyCapture=new RoundedButton{Text=KeyName(actionKey),BackColor=field,ForeColor=ink,Location=keyChoices.Location,Size=keyChoices.Size,Anchor=keyChoices.Anchor,Visible=false,TextAlign=ContentAlignment.MiddleLeft,AccessibleName="Choose repeated key"};tips.SetToolTip(keyCapture,"Click here, then press the key you want to repeat.");keyCapture.Click+=delegate{if(IsBusy())return;using(ModalScope scope=new ModalScope(this))using(ShortcutDialog dialog=new ShortcutDialog("Choose repeated key",actionKey)){if(dialog.ShowDialog(ModalOwner)==DialogResult.OK){if((dialog.Binding&(int)Keys.Modifiers)!=0){Message("Choose a single key. Use Record for combinations.");return;}actionKey=dialog.Binding;SelectActionKey(actionKey);keyCapture.Text=KeyName(actionKey);}}};normalHost.Controls.Add(keyCapture);
+            mouse=StyledCombo(380);mouse.Items.AddRange(new object[]{"Left click","Right click","Middle click","Double click"});mouse.SelectedIndex=0;mouse.Location=new Point(174,17);mouse.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;mouse.Width=306;normalHost.Controls.Add(mouse);
+            keyChoices=StyledCombo(380);keyChoices.Location=mouse.Location;keyChoices.Size=mouse.Size;keyChoices.Anchor=mouse.Anchor;keyChoices.Visible=false;List<int> choiceCodes=new List<int>();for(int key=65;key<=90;key++)choiceCodes.Add(key);for(int key=48;key<=57;key++)choiceCodes.Add(key);for(int key=112;key<=135;key++)choiceCodes.Add(key);for(int key=96;key<=105;key++)choiceCodes.Add(key);choiceCodes.AddRange(new int[]{32,13,9,8,27,37,38,39,40,45,46,36,35,33,34,106,107,109,110,111});foreach(int code in choiceCodes)keyChoices.Items.Add(new KeyChoice{Code=code});SelectActionKey(actionKey);keyChoices.SelectedIndexChanged+=delegate{if(keyChoices.SelectedItem is KeyChoice)actionKey=((KeyChoice)keyChoices.SelectedItem).Code;};keyCapture=new RoundedButton{Text=KeyName(actionKey),BackColor=field,ForeColor=ink,Location=keyChoices.Location,Size=keyChoices.Size,Anchor=keyChoices.Anchor,Visible=false,TextAlign=ContentAlignment.MiddleLeft,AccessibleName="Choose repeated key"};tips.SetToolTip(keyCapture,"Click here, then press the key you want to repeat.");keyCapture.Click+=delegate{if(IsBusy())return;using(ModalScope scope=new ModalScope(this))using(ShortcutDialog dialog=new ShortcutDialog("Choose repeated key",actionKey)){if(dialog.ShowDialog(ModalOwner)==DialogResult.OK){if(!ValidActionKey(dialog.Binding)){Message("Choose a key, optionally with Ctrl, Shift or Alt.");return;}actionKey=dialog.Binding;SelectActionKey(actionKey);keyCapture.Text=KeyName(actionKey);}}};normalHost.Controls.Add(keyCapture);
             normalHost.Controls.Add(new Label{Text="Interval",AutoSize=true,ForeColor=ink,Location=new Point(0,112)});interval=Number(10,3600000,100,210);interval.Font=new Font("Segoe UI",16);interval.Location=new Point(174,101);interval.Width=210;interval.Height=54;normalHost.Controls.Add(interval);normalHost.Controls.Add(new Label{Text="ms",AutoSize=true,ForeColor=muted,Location=new Point(400,112)});tips.SetToolTip(interval,"100 ms = one press every tenth of a second.");
             intervalHint=new Label{AutoSize=false,AutoEllipsis=true,Location=new Point(176,160),Size=new Size(304,32),ForeColor=accent,Font=new Font("Segoe UI",12),Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right};normalHost.Controls.Add(intervalHint);
             recordingHost=new Panel{Dock=DockStyle.Fill,Visible=false,Margin=new Padding(0)};recordCount=new Label{Text="Recorded routine · 0 steps",Dock=DockStyle.Top,Height=0,ForeColor=ink,Font=new Font("Segoe UI",10)};events=new ListBox{Dock=DockStyle.Fill,BackColor=field,ForeColor=ink,BorderStyle=BorderStyle.None,IntegralHeight=false,Font=new Font("Segoe UI",14),DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=45};events.DrawItem+=DrawRecordedStep;
-            recordingTools=new TableLayoutPanel{Dock=DockStyle.Bottom,Height=54,ColumnCount=4,RowCount=1,Padding=new Padding(0,6,0,2)};recordingTools.RowStyles.Add(new RowStyle(SizeType.Percent,100));for(int i=0;i<4;i++)recordingTools.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,i==0?32f:22.666f));Button delay=ButtonFor("Delay",75);delay.Click+=delegate{EditDelay();};Button remove=ButtonFor("Remove",75);remove.Click+=delegate{if(IsBusy()||events.SelectedIndex<0)return;recorded.RemoveAt(events.SelectedIndex);UpdateEvents();};Button clear=ButtonFor("Clear",75);clear.Click+=delegate{if(IsBusy()||recorded.Count==0)return;if(!SelfTestMode&&MessageBox.Show(ModalOwner,"Clear all "+recorded.Count+" recorded steps?","Auto Loop",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;recorded.Clear();UpdateEvents();};Button save=ButtonFor("Save",75);save.Click+=delegate{SaveRoutine();};Button open=ButtonFor("Open",75);open.Click+=delegate{LoadRoutine();};ContextMenuStrip editMenu=new ContextMenuStrip();editMenu.Items.Add("Change delay",null,delegate{EditDelay();});editMenu.Items.Add("Remove selected step",null,delegate{if(!IsBusy()&&events.SelectedIndex>=0){recorded.RemoveAt(events.SelectedIndex);UpdateEvents();}});events.ContextMenuStrip=editMenu;Button testOnce=ButtonFor("Test once",100);testOnce.Click+=delegate{StartCountdown(false,true);};tips.SetToolTip(testOnce,"Play this recording once without changing its repeat or time settings.");Button[] tools={testOnce,clear,save,open};for(int i=0;i<tools.Length;i++){tools[i].Dock=DockStyle.Fill;tools[i].Margin=new Padding(0,0,i==3?0:6,0);tools[i].Font=new Font("Segoe UI",14);recordingTools.Controls.Add(tools[i],i,0);}recordingHost.Controls.Add(events);recordingHost.Controls.Add(recordCount);recordingHost.Controls.Add(recordingTools);
+            recordingTools=new TableLayoutPanel{Dock=DockStyle.Bottom,Height=54,ColumnCount=4,RowCount=1,Padding=new Padding(0,6,0,2)};recordingTools.RowStyles.Add(new RowStyle(SizeType.Percent,100));for(int i=0;i<4;i++)recordingTools.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,i==0?32f:22.666f));Button clear=ButtonFor("Clear",75);clear.Click+=delegate{if(IsBusy()||recorded.Count==0)return;if(!SelfTestMode&&MessageBox.Show(ModalOwner,"Clear all "+recorded.Count+" recorded steps?","Auto Loop",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;recorded.Clear();UpdateEvents();};Button save=ButtonFor("Save",75);save.Click+=delegate{SaveRoutine();};Button open=ButtonFor("Open",75);open.Click+=delegate{LoadRoutine();};ContextMenuStrip editMenu=new ContextMenuStrip();editMenu.Items.Add("Change delay",null,delegate{EditDelay();});editMenu.Items.Add("Remove selected step",null,delegate{if(!IsBusy()&&events.SelectedIndex>=0){recorded.RemoveAt(events.SelectedIndex);UpdateEvents();}});events.ContextMenuStrip=editMenu;Button testOnce=ButtonFor("Test once",100);testOnce.Click+=delegate{StartCountdown(false,true);};tips.SetToolTip(testOnce,"Play this recording once without changing its repeat or time settings.");Button[] tools={testOnce,clear,save,open};for(int i=0;i<tools.Length;i++){tools[i].Dock=DockStyle.Fill;tools[i].Margin=new Padding(0,0,i==3?0:6,0);tools[i].Font=new Font("Segoe UI",14);recordingTools.Controls.Add(tools[i],i,0);}recordingHost.Controls.Add(events);recordingHost.Controls.Add(recordCount);recordingHost.Controls.Add(recordingTools);
             Panel modeHost=new Panel{Dock=DockStyle.Fill,Margin=new Padding(0)};modeHost.Controls.Add(normalHost);modeHost.Controls.Add(recordingHost);optionGrid.Controls.Add(modeHost,0,0);
             repeats=Number(0,1000000,10,100);limit=Number(0,86400,0,100);TableLayoutPanel stopRow=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Margin=new Padding(0),Padding=new Padding(0,0,0,8)};stopRow.RowStyles.Add(new RowStyle(SizeType.Percent,100));stopRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,174));stopRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));stopRow.Controls.Add(FieldLabel("Stop after"),0,0);stopValue=Number(1,1000000,10,78);stopValue.Dock=DockStyle.Top;stopValue.Margin=new Padding(0,3,7,0);stopRule=StyledCombo(200);stopRule.Dock=DockStyle.Top;stopRule.Items.AddRange(new object[]{"repeats","seconds","Until stopped"});stopRule.SelectedIndex=0;stopRule.Margin=new Padding(0);stopValue.ShowBorder=false;stopValue.ShowSpin=false;stopValue.TextInset=2;stopValue.BackColor=field;stopValue.Margin=new Padding(0);stopValue.Dock=DockStyle.Fill;((DarkComboBox)stopRule).BorderVisible=false;stopRule.BackColor=field;stopRule.Margin=new Padding(0);RoundedPanel unitGroup=new RoundedPanel{Dock=DockStyle.Fill,BackColor=field,Margin=new Padding(0),Padding=new Padding(7,4,7,4)};TableLayoutPanel unitLayout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Margin=new Padding(0)};unitLayout.RowStyles.Add(new RowStyle(SizeType.Percent,100));unitLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,65));unitLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));unitLayout.Controls.Add(stopValue,0,0);unitLayout.Controls.Add(stopRule,1,0);unitGroup.Controls.Add(unitLayout);stopRow.Controls.Add(unitGroup,1,0);stopRule.SelectedIndexChanged+=delegate{SetStopMode();};stopValue.ValueChanged+=delegate{SyncStopValues();};optionGrid.Controls.Add(stopRow,0,1);
             Panel targetPanel=new Panel{Dock=DockStyle.Bottom,BackColor=card,Height=88,Padding=new Padding(0),Margin=new Padding(0)};configuration.Controls.Add(targetPanel);compactRoot.SetRowSpan(configuration,2);targetPanel.Paint+=delegate(object sender,PaintEventArgs e){using(Pen line=new Pen(Color.FromArgb(50,67,84)))e.Graphics.DrawLine(line,0,4,targetPanel.Width,4);};
@@ -284,7 +297,7 @@ namespace AutoLoop {
         internal enum PickKind{None,App,Spot}
         internal PickKind picking; long pickDeadline; int swallowPickUp;
         void StartPick(PickKind kind) {
-            if(keyboardHook==IntPtr.Zero||mouseHook==IntPtr.Zero){Message("Picking needs the input hooks, which could not be installed. Choose the app from the list, or type the X and Y position.");return;}
+            if(!EnsureHooks()){Message("Picking needs the input hooks, which could not be installed. Choose the app from the list, or type the X and Y position.");return;}
             picking=kind;pickDeadline=Stopwatch.GetTimestamp()+20L*Stopwatch.Frequency;swallowPickUp=0;
             SetStatus(kind==PickKind.App?"Click the app to use":"Click the spot to click on","Press Esc or right-click to cancel.");UpdateChrome();
         }
@@ -343,7 +356,7 @@ namespace AutoLoop {
         // ---- Floating status bar, countdown badge and tray icon. ----
         FloatingBar bar; ScreenBadge countdownBadge, spotBadge; System.Windows.Forms.Timer spotTimer;
         NotifyIcon tray; ContextMenuStrip trayMenu; ToolStripMenuItem trayPause; long trayNoticeUntil; string lastTrayText="";
-        internal string BarText="", CountdownText=""; internal bool TrayWanted; bool runOnce;
+        internal string BarText="", CountdownText=""; internal bool TrayWanted, KeepingAwake; bool runOnce;
         static readonly Color GreenDot=Color.FromArgb(68,220,143), AmberDot=Color.FromArgb(245,203,112), RedDot=Color.FromArgb(255,111,111);
         string Progress() {
             if(repeatCount>0)return completed+" / "+repeatCount;
@@ -366,6 +379,9 @@ namespace AutoLoop {
             if(pendingPlay||pendingRecord){long remaining=countdownUntil-Stopwatch.GetTimestamp();if(remaining>0)countdown=Math.Ceiling(remaining/(double)Stopwatch.Frequency).ToString();}
             CountdownText=countdown;
             TrayWanted=running||recording||pendingPlay||pendingRecord||Stopwatch.GetTimestamp()<trayNoticeUntil;
+            // Keep the PC and screen awake only while Auto Loop is counting down, playing or recording.
+            bool awake=running||recording||pendingPlay||pendingRecord;
+            if(awake!=KeepingAwake){KeepingAwake=awake;Native.SetThreadExecutionState(awake?0x80000003u:0x80000000u);}
             if(SelfTestMode)return;
             if(text.Length>0){
                 if(bar==null){bar=new FloatingBar();bar.LeftClicked+=delegate{TogglePause();UpdateChrome();};bar.RightClicked+=delegate{if(picking!=PickKind.None)CancelPick();else if(recording)FinishRecording();else StopAll("Stopped");UpdateChrome();};}
@@ -396,8 +412,8 @@ namespace AutoLoop {
         void ShowMainWindow(){if(WindowState==FormWindowState.Minimized)WindowState=FormWindowState.Normal;Show();Activate();}
         void HideChrome(){if(bar!=null)bar.Hide();if(countdownBadge!=null)countdownBadge.Hide();if(spotBadge!=null)spotBadge.Hide();if(tray!=null)tray.Visible=false;}
         internal string NoticeText(bool targetClosed) {
-            string unit=modes.SelectedIndex==0?"clicks":modes.SelectedIndex==1?"presses":"plays";
-            string done=completed+" "+(completed==1?unit.TrimEnd('s').Replace("presse","press"):unit)+" in "+Clock(activeClock);
+            string one=modes.SelectedIndex==1?"press":modes.SelectedIndex==2?"play":DoubleClicks?"double click":"click";
+            string done=completed+" "+(completed==1?one:Plural(one))+" in "+Clock(activeClock);
             return targetClosed?"The selected app closed after "+done+".":done+". "+KeyName(preferences.Hotkeys[0])+" runs it again.";
         }
         void NotifyDone(bool targetClosed) {
@@ -410,17 +426,19 @@ namespace AutoLoop {
 
         // ---- Plain-language hints: under Interval, and in the status line for the Stop after rule. ----
         bool hintsWired;
-        void WireHints(){hintsWired=true;interval.ValueChanged+=delegate{UpdateHints(true);};stopValue.ValueChanged+=delegate{UpdateHints(true);};stopRule.SelectedIndexChanged+=delegate{UpdateHints(true);};modes.SelectedIndexChanged+=delegate{UpdateHints(true);};UpdateHints(false);}
+        void WireHints(){hintsWired=true;interval.ValueChanged+=delegate{UpdateHints(true);};stopValue.ValueChanged+=delegate{UpdateHints(true);};stopRule.SelectedIndexChanged+=delegate{UpdateHints(true);};modes.SelectedIndexChanged+=delegate{UpdateHints(true);};mouse.SelectedIndexChanged+=delegate{UpdateHints(true);};UpdateHints(false);}
         static string Amount(double value){return value>=10?Math.Round(value).ToString("0"):Math.Round(value,1).ToString("0.#");}
         static string Duration(double ms) {
             double s=ms/1000;if(s<1)return "under a second";if(s<59.5)return Amount(s)+(Amount(s)=="1"?" second":" seconds");
             long total=(long)Math.Round(s);if(total<3600)return (total/60)+" min"+(total%60>0?" "+(total%60)+" s":"");
             return (total/3600)+" h"+(total/60%60>0?" "+(total/60%60)+" min":"");
         }
+        bool DoubleClicks{get{return modes.SelectedIndex==0&&mouse.SelectedIndex==3;}}
+        static string Plural(string unit){return unit.EndsWith("s")?unit+"es":unit+"s";}
         internal string IntervalHintText() {
-            bool keys=modes.SelectedIndex==1;double ms=(double)interval.Value;
-            if(ms<1000)return "about "+Amount(1000/ms)+(keys?" presses":" clicks")+" per second";
-            return (keys?"1 press":"1 click")+" every "+Amount(ms/1000)+(Amount(ms/1000)=="1"?" second":" seconds");
+            string one=modes.SelectedIndex==1?"press":DoubleClicks?"double click":"click";double ms=(double)interval.Value;
+            if(ms<1000)return "about "+Amount(1000/ms)+" "+Plural(one)+" per second";
+            return "1 "+one+" every "+Amount(ms/1000)+(Amount(ms/1000)=="1"?" second":" seconds");
         }
         internal string StopHintText() {
             int rule=stopRule.SelectedIndex,mode=modes.SelectedIndex;double count=(double)stopValue.Value;
@@ -431,7 +449,7 @@ namespace AutoLoop {
                 if(rule==0)return pass>0?"about "+Duration(count*pass)+" in total":"plays the recording "+Amount(count)+(count==1?" time":" times");
                 return pass>0?"about "+Amount(Math.Max(1,Math.Floor(count*1000/Math.Max(10,pass))))+" plays, then stops":"loops for "+Duration(count*1000);
             }
-            string unit=mode==1?" presses":" clicks";double ms=(double)interval.Value;
+            string unit=" "+Plural(mode==1?"press":DoubleClicks?"double click":"click");double ms=(double)interval.Value;
             if(rule==0)return "takes about "+Duration(count*ms);
             return "about "+Amount(Math.Max(1,Math.Floor(count*1000/ms)))+unit+", then stops";
         }
@@ -503,7 +521,7 @@ namespace AutoLoop {
         void StartCountdown(bool rec, bool once=false) {
             if(running||recording||pendingPlay||pendingRecord)return;
             CancelPick();elevationCache.Clear();
-            if(rec&&(keyboardHook==IntPtr.Zero||mouseHook==IntPtr.Zero)){Message("Recording is unavailable because the input hooks could not be installed. Restart Auto Loop.");return;}
+            if(rec&&!EnsureHooks()){Message("Recording is unavailable because Windows refused the input hooks. Restart Auto Loop and try again.");return;}
             if(!BindTarget())return;
             if(!rec&&!stopHotkeyRegistered){Message("Set an available global Stop shortcut in Settings before starting playback.");return;}
             if(!rec&&!ReleaseAll()){Message("Some generated inputs could not be released. Press Stop to retry before starting playback.");return;}
@@ -520,7 +538,8 @@ namespace AutoLoop {
                 foreach(Step step in recorded){if(step.Kind=="KeyDown"){pressed.Add(step.Code);if(preferences.Hotkeys.Any(b=>(b&0xFFFF)==step.Code&&BindingModifiers(b)==PressedModifiers(pressed))){Message("The recording contains a control shortcut. Change that shortcut before playback.");return false;}}else if(step.Kind=="KeyUp")pressed.Remove(step.Code);}
             } else {
                 if(hold.Value>interval.Value){Message("Hold time must be shorter than or equal to the interval.");return false;}
-                if(modes.SelectedIndex==1 && preferences.Hotkeys.Any(k=>(k & 0xFFFF)==actionKey)){Message("The repeated key matches a control shortcut. Choose a different key or shortcut.");return false;}
+                if(modes.SelectedIndex==0&&mouse.SelectedIndex==3&&interval.Value<2*hold.Value+DoubleClickGap){Message("For double clicks the interval must be at least "+(2*hold.Value+DoubleClickGap)+" ms (two presses plus a short gap).");return false;}
+                if(modes.SelectedIndex==1 && preferences.Hotkeys.Any(k=>k==actionKey)){Message("The repeated key matches a control shortcut. Choose a different key or shortcut.");return false;}
             }
             return true;
         }
@@ -534,11 +553,21 @@ namespace AutoLoop {
             playback=new List<Step>();
             if(modes.SelectedIndex==2)playback=recorded.Select(Clone).ToList();
             else {
-                bool click=modes.SelectedIndex==0;int code=click?new int[]{(int)MouseButtons.Left,(int)MouseButtons.Right,(int)MouseButtons.Middle}[mouse.SelectedIndex]:actionKey;
-                if(click&&fixedPosition.Checked)playback.Add(new Step{Kind="Move",X=(int)px.Value,Y=(int)py.Value});
-                playback.Add(new Step{Kind=click?"MouseDown":"KeyDown",Code=code,Extended=!click&&Native.Extended(code)});
-                playback.Add(new Step{Kind=click?"MouseUp":"KeyUp",Code=code,Delay=(int)hold.Value,Extended=!click&&Native.Extended(code)});
-                playback.Add(new Step{Kind="Wait",Delay=(int)(interval.Value-hold.Value)});
+                int holdMs=(int)hold.Value,used=holdMs;
+                if(modes.SelectedIndex==0){
+                    int button=new int[]{(int)MouseButtons.Left,(int)MouseButtons.Right,(int)MouseButtons.Middle,(int)MouseButtons.Left}[mouse.SelectedIndex];
+                    if(fixedPosition.Checked)playback.Add(new Step{Kind="Move",X=(int)px.Value,Y=(int)py.Value});
+                    playback.Add(new Step{Kind="MouseDown",Code=button});playback.Add(new Step{Kind="MouseUp",Code=button,Delay=holdMs});
+                    if(mouse.SelectedIndex==3){playback.Add(new Step{Kind="MouseDown",Code=button,Delay=DoubleClickGap});playback.Add(new Step{Kind="MouseUp",Code=button,Delay=holdMs});used=2*holdMs+DoubleClickGap;}
+                } else {
+                    // Key combinations: modifiers go down first and come up last, around the main key.
+                    int main=actionKey&0xFFFF;List<int> modifiers=ActionModifiers(actionKey);
+                    foreach(int m in modifiers)playback.Add(new Step{Kind="KeyDown",Code=m});
+                    playback.Add(new Step{Kind="KeyDown",Code=main,Extended=Native.Extended(main)});
+                    playback.Add(new Step{Kind="KeyUp",Code=main,Delay=holdMs,Extended=Native.Extended(main)});
+                    for(int i=modifiers.Count-1;i>=0;i--)playback.Add(new Step{Kind="KeyUp",Code=modifiers[i]});
+                }
+                playback.Add(new Step{Kind="Wait",Delay=Math.Max(0,(int)interval.Value-used)});
             }
             runOnce=once;lastMoveClock=long.MinValue/2;repeatCount=once?1:(int)repeats.Value;maxDuration=once?0:(long)limit.Value*1000;completed=0;index=0;due=playback[0].Delay;running=true;userPaused=false;focusPaused=false;ResetClock();
             SetStatus(once?"Testing once":"Running","Stop: "+KeyName(preferences.Hotkeys[3])+(boundTarget==null?". Input follows the active app.":". Input is restricted to the selected app."));
@@ -623,6 +652,8 @@ namespace AutoLoop {
             if(busy)return;busy=true;
             try {
                 if(picking!=PickKind.None&&Stopwatch.GetTimestamp()>pickDeadline)CancelPick();
+                // Runs from the timer, never from inside a hook callback, so unhooking here is safe.
+                if(!SelfTestMode&&!HooksNeeded&&(keyboardHook!=IntPtr.Zero||mouseHook!=IntPtr.Zero))RemoveHooks();
                 if(pendingPlay||pendingRecord) {
                     long remaining=countdownUntil-Stopwatch.GetTimestamp();
                     if(remaining>0){status.Text=(pendingRecord?"Recording in ":"Starting in ")+Math.Ceiling(remaining/(double)Stopwatch.Frequency)+" seconds";return;}
@@ -677,11 +708,16 @@ namespace AutoLoop {
             foreach(int b in heldMouse.ToArray()){try{Send(Native.Mouse(b,true));heldMouse.Remove(b);}catch{}}
             return heldKeys.Count==0&&heldMouse.Count==0;
         }
-        void InstallHooks() {
+        // The global keyboard and mouse hooks run only while recording or picking, never while Auto Loop sits idle.
+        bool EnsureHooks() {
+            if(keyboardHook!=IntPtr.Zero&&mouseHook!=IntPtr.Zero)return true;
+            if(SelfTestMode)return false;
             keyboardProc=KeyboardHook;mouseProc=MouseHook;IntPtr module=Native.GetModuleHandle(null);
             keyboardHook=Native.SetWindowsHookEx(13,keyboardProc,module,0);mouseHook=Native.SetWindowsHookEx(14,mouseProc,module,0);
-            if(keyboardHook==IntPtr.Zero||mouseHook==IntPtr.Zero){RemoveHooks();Message("Recording hooks could not be installed. Restart Auto Loop before recording.");recordButton.Enabled=false;}
+            if(keyboardHook==IntPtr.Zero||mouseHook==IntPtr.Zero){RemoveHooks();return false;}
+            return true;
         }
+        internal bool HooksNeeded{get{return recording||pendingRecord||picking!=PickKind.None||swallowPickUp!=0;}}
         void RemoveHooks(){if(keyboardHook!=IntPtr.Zero)Native.UnhookWindowsHookEx(keyboardHook);if(mouseHook!=IntPtr.Zero)Native.UnhookWindowsHookEx(mouseHook);keyboardHook=mouseHook=IntPtr.Zero;}
         bool CanRecord(){return recording&&!recordingLimitReached&&!userPaused&&FocusEligible();}
         static int BindingModifiers(int binding){return binding&(int)Keys.Modifiers;}
@@ -759,11 +795,11 @@ namespace AutoLoop {
         }
         void ChangeShortcut(int which) {
             if(IsBusy())return;bool previousShortcutState=changingShortcuts;changingShortcuts=true;
-            try{using(ShortcutDialog d=new ShortcutDialog("Set "+new string[]{"Start","Record","Pause","Stop all"}[which]+" shortcut",preferences.Hotkeys[which])) {
+            try{using(ShortcutDialog d=new ShortcutDialog("Set "+new string[]{"Start","Record","Pause","Stop all"}[which]+" shortcut",preferences.Hotkeys[which],true)) {
                 if(d.ShowDialog(ModalOwner)!=DialogResult.OK)return;
                 int binding=d.Binding,key=binding&0xFFFF;if(key<8||key>254||IsModifier(key)){Message("Choose a letter, number, function key, or a combination.");return;}
                 if(preferences.Hotkeys.Where((v,i)=>i!=which).Any(v=>(v&0xFFFF)==key)){Message("Each control needs a different main key, even when modifiers differ.");return;}
-                if(key==actionKey){Message("That key is the repeated action key. Choose another shortcut.");return;}
+                if(binding==actionKey){Message("That key is the repeated action key. Choose another shortcut.");return;}
                 int[] next=(int[])preferences.Hotkeys.Clone();next[which]=binding;
                 if(!RegisterBindings(next)){RegisterBindings(preferences.Hotkeys);Message("Windows or another app is already using that shortcut. Check Settings for a working Stop shortcut before playback.");return;}
                 preferences.Hotkeys=next;UpdateShortcuts();if(SavePreferences())SetStatus("Shortcuts updated","Your shortcut settings are saved beside Auto Loop.");else Message("The new shortcut works now, but it could not be saved and will reset when Auto Loop restarts. Move Auto Loop to a folder you can write to.");
@@ -786,9 +822,22 @@ namespace AutoLoop {
             FileInfo info=new FileInfo(path);if(info.Length>30*1024*1024)throw new InvalidDataException("File exceeds the 30 MB limit.");
             using(XmlReader reader=XmlReader.Create(path,new XmlReaderSettings{DtdProcessing=DtdProcessing.Prohibit,XmlResolver=null,MaxCharactersInDocument=30*1024*1024}))return (T)new XmlSerializer(typeof(T)).Deserialize(reader);
         }
-        void LoadRoutine(){if(IsBusy())return;using(ModalScope scope=new ModalScope(this)){using(OpenFileDialog d=new OpenFileDialog{Filter="Auto Loop routine (*.autoloop)|*.autoloop",InitialDirectory=Path.Combine(dataRoot,"Routines")}){if(d.ShowDialog(ModalOwner)!=DialogResult.OK)return;try{CancelPick();ApplyRoutine(ReadXml<Routine>(d.FileName));SetStatus("Routine opened","Choose the target app again before starting. Screen positions must match the recording.");}catch(Exception e){Message("Could not open the routine: "+e.Message);}}}}
+        void LoadRoutine(){if(IsBusy())return;using(ModalScope scope=new ModalScope(this)){using(OpenFileDialog d=new OpenFileDialog{Filter="Auto Loop routine (*.autoloop)|*.autoloop",InitialDirectory=Path.Combine(dataRoot,"Routines")}){if(d.ShowDialog(ModalOwner)!=DialogResult.OK)return;try{CancelPick();RefreshWindows();OpenRoutineFile(d.FileName);}catch(Exception e){Message("Could not open the routine: "+e.Message);}}}}
+        // Opens a routine and, when it was made for a selected app that is open now, selects that app again.
+        internal void OpenRoutineFile(string path) {
+            Routine r=ReadXml<Routine>(path);ApplyRoutine(r);
+            if(!r.LockTarget){SetStatus("Routine opened","Screen positions must match the recording.");return;}
+            WindowChoice found=SelectTargetByTitle(r.TargetTitle);
+            if(found!=null)SetStatus("Routine opened · "+found.Title+" selected","Screen positions must match the recording.");
+            else SetStatus("Routine opened · pick the app","\""+r.TargetTitle+"\" isn't open. Open it, then press Pick app.");
+        }
+        WindowChoice SelectTargetByTitle(string title) {
+            if(string.IsNullOrEmpty(title))return null;
+            for(int i=0;i<targets.Items.Count;i++){WindowChoice c=(WindowChoice)targets.Items[i];if(c.Title==title){targets.SelectedIndex=i;return c;}}
+            return null;
+        }
         public static void ValidateRoutine(Routine r) {
-            if(r==null||r.Version!=1||r.Mode<0||r.Mode>2||r.Interval<10||r.Interval>3600000||r.Hold<1||r.Hold>60000||r.Hold>r.Interval||r.Repeat<0||r.Repeat>1000000||r.LimitSeconds<0||r.LimitSeconds>86400||r.Key<8||r.Key>254||r.MouseButton<0||r.MouseButton>2||Math.Abs((long)r.FixedX)>100000||Math.Abs((long)r.FixedY)>100000)throw new InvalidDataException("Routine settings are invalid or unsupported.");ValidateSteps(r.Steps,false);
+            if(r==null||r.Version!=1||r.Mode<0||r.Mode>2||r.Interval<10||r.Interval>3600000||r.Hold<1||r.Hold>60000||r.Hold>r.Interval||r.Repeat<0||r.Repeat>1000000||r.LimitSeconds<0||r.LimitSeconds>86400||!ValidActionKey(r.Key)||r.MouseButton<0||r.MouseButton>3||Math.Abs((long)r.FixedX)>100000||Math.Abs((long)r.FixedY)>100000)throw new InvalidDataException("Routine settings are invalid or unsupported.");ValidateSteps(r.Steps,false);
         }
         public static void ValidateSteps(List<Step> steps,bool requireBalanced) {
             if(steps==null||steps.Count>MaxRecordedSteps)throw new InvalidDataException("Recording is missing or too large.");
@@ -808,7 +857,7 @@ namespace AutoLoop {
             Routine last=preferences.Last;preferences.Last=null;if(last==null)return;
             try{
                 last.Steps=new List<Step>();ApplyRoutine(last);
-                if(last.LockTarget&&!string.IsNullOrEmpty(last.TargetTitle))for(int i=0;i<targets.Items.Count;i++)if(((WindowChoice)targets.Items[i]).Title==last.TargetTitle){targets.SelectedIndex=i;break;}
+                if(last.LockTarget)SelectTargetByTitle(last.TargetTitle);
                 SetStatus("Ready · settings from last time","Your settings from the last session were restored.");
             }catch{ /* Saved settings that no longer validate are ignored; defaults stay. */ }
         }
@@ -974,6 +1023,54 @@ namespace AutoLoop {
                     if(Native.GetAncestor(Native.WindowFromPoint(dotPoint),Native.RootWindow)==dot.Handle)throw new Exception("Spot dot blocks clicks");
                     int oldTop=testBar.Top;testBar.MoveAway();if(testBar.Top==oldTop)throw new Exception("Status bar did not move away");
                 }
+            });
+            check("Double click sends two presses per repeat",()=>{
+                reset();modes.SelectedIndex=0;mouse.SelectedIndex=3;interval.Value=200;repeats.Value=1;
+                if(IntervalHintText()!="about 5 double clicks per second")throw new Exception(IntervalHintText());
+                BeginPlayback();foreach(long t in new long[]{0,30,70,100,200}){TestTime=t;TickEngine();}
+                uint[] buttons=sent.Where(i=>i.type==0).Select(i=>i.u.mi.flags).ToArray();
+                if(!buttons.SequenceEqual(new uint[]{2,4,2,4})||running||LastNotice!="1 double click in 0:01. F6 runs it again.")throw new Exception("Got "+string.Join(",",buttons)+" running="+running+" notice="+LastNotice);
+                reset();modes.SelectedIndex=0;mouse.SelectedIndex=3;interval.Value=90;
+                if(ValidatePlayback()||!LastMessage.Contains("double clicks"))throw new Exception("Too-short double-click interval accepted");
+            });
+            check("Key combinations repeat with modifiers wrapped around the key",()=>{
+                reset();actionKey=(int)(Keys.Control|Keys.C);repeats.Value=1;
+                if(!ValidActionKey(actionKey)||ValidActionKey(17)||ValidActionKey((int)(Keys.LWin|Keys.C))||ValidActionKey(0))throw new Exception("Key validation wrong");
+                MainForm.ValidateRoutine(new Routine{Mode=1,Key=actionKey});
+                if(!ValidatePlayback())throw new Exception("Combination refused: "+LastMessage);
+                BeginPlayback();foreach(long t in new long[]{0,30,100}){TestTime=t;TickEngine();}
+                string order=string.Join(",",sent.Select(i=>((i.u.ki.flags&2)!=0?"-":"+")+i.u.ki.vk));
+                if(order!="+17,+67,-67,-17"||running)throw new Exception("Order "+order);
+                reset();actionKey=(int)(Keys.Control|Keys.C);BeginPlayback();TickEngine();StopAll("Stop");
+                if(heldKeys.Count!=0||sent.Count(i=>(i.u.ki.flags&2)!=0)!=2)throw new Exception("Combination keys left held");
+                reset();preferences.Hotkeys[0]=(int)(Keys.Control|Keys.F6);actionKey=(int)Keys.F6;if(!ValidatePlayback())throw new Exception("Plain F6 wrongly blocked by Ctrl+F6");
+                actionKey=(int)(Keys.Control|Keys.F6);if(ValidatePlayback())throw new Exception("Exact shortcut conflict accepted");
+            });
+            check("Keys carry hardware scan codes",()=>{Native.INPUT k=Native.Key(70,false,false);if(k.u.ki.scan==0||k.u.ki.vk!=70)throw new Exception("Missing scan code");});
+            check("Esc cancels the shortcut dialog but can be the repeated key",()=>{
+                using(ShortcutDialog shortcut=new ShortcutDialog("Set Stop shortcut",(int)Keys.F9,true)){shortcut.PressForTest(Keys.Escape);if(shortcut.DialogResult!=DialogResult.Cancel||shortcut.Binding!=(int)Keys.F9)throw new Exception("Esc did not cancel");}
+                using(ShortcutDialog repeat=new ShortcutDialog("Choose repeated key",(int)Keys.F)){repeat.PressForTest(Keys.Escape);if(repeat.Binding!=(int)Keys.Escape||repeat.DialogResult==DialogResult.Cancel)throw new Exception("Esc not selectable");
+                    repeat.PressForTest(Keys.Control|Keys.C);if(repeat.Binding!=(int)(Keys.Control|Keys.C))throw new Exception("Combination not captured");}
+            });
+            check("Opening a routine reselects its app when that window is open",()=>{
+                reset();WindowChoice fake=new WindowChoice{Handle=new IntPtr(0x6161),Process=1,Title="Fake Notepad 7731"};targets.Items.Add(fake);
+                string path=Path.Combine(Path.GetTempPath(),"autoloop-open-"+Guid.NewGuid().ToString("N")+".autoloop");
+                try{
+                    WriteXml(path,new Routine{Mode=0,LockTarget=true,TargetTitle=fake.Title});OpenRoutineFile(path);
+                    if(targets.SelectedItem!=fake||!lockTarget.Checked||!status.Text.Contains("selected"))throw new Exception("App not reselected: "+status.Text);
+                    targets.SelectedIndex=-1;WriteXml(path,new Routine{Mode=0,LockTarget=true,TargetTitle="Closed app 4410"});OpenRoutineFile(path);
+                    if(targets.SelectedIndex!=-1||!status.Text.Contains("pick the app"))throw new Exception("Missing app not explained: "+status.Text);
+                }finally{File.Delete(path);targets.Items.Remove(fake);lockTarget.Checked=false;}
+            });
+            check("PC stays awake only while running",()=>{
+                reset();if(KeepingAwake)throw new Exception("Awake while idle");BeginPlayback();TickEngine();if(!KeepingAwake)throw new Exception("Not kept awake");
+                StopAll("Done");if(KeepingAwake)throw new Exception("Still awake after stop");
+            });
+            check("Input hooks are only needed while recording or picking",()=>{
+                reset();if(HooksNeeded)throw new Exception("Hooks needed at idle");
+                picking=PickKind.App;if(!HooksNeeded)throw new Exception("Picking needs hooks");picking=PickKind.None;
+                swallowPickUp=0x202;if(!HooksNeeded)throw new Exception("Pending pick release needs hooks");swallowPickUp=0;
+                BeginRecording();if(!HooksNeeded)throw new Exception("Recording needs hooks");FinishRecording();if(HooksNeeded)throw new Exception("Hooks kept after recording");
             });
             check("File version matches product version",()=>{
                 var info=FileVersionInfo.GetVersionInfo(System.Reflection.Assembly.GetExecutingAssembly().Location);

@@ -8,7 +8,7 @@ This guide walks through each part of Auto Loop. For download and install steps,
 |---|---|
 | ![Click tab](click.png) | ![Keys tab](keys.png) |
 
-1. Choose **Click** and pick a mouse button, or choose **Keys**, click the key field and press the key to repeat.
+1. Choose **Click** and pick a mouse button (or **Double click**), or choose **Keys**, click the key field and press the key to repeat. Combinations like Ctrl+C work too: Auto Loop holds Ctrl, presses C, then lets go. For double clicks, the interval must leave room for both presses (at least 100 ms with the default press duration).
 2. Set the **Interval**. The line under it says what it means, for example "about 10 clicks per second". The shortest interval is 10 ms.
 3. Choose **Stop after**: a number of repeats, a number of seconds, or **Until stopped**. The status line at the bottom says what will happen, for example "Ready · about 600 clicks, then stops". Time spent paused doesn't count toward the seconds.
 4. Choose **Any app**, or **Selected app** and the app to use (see below).
@@ -42,7 +42,7 @@ With **Selected app**, press **Pick app** and click anywhere in the window you w
 3. Do your actions, then press **F7** again (or **F9**, or **Finish** on the status bar) to finish.
 4. Press **Test once** to play one pass. It ignores your Stop after setting without changing it.
 5. Press **Start** to play using your Stop after setting.
-6. Press **Save** to keep the recording, or **Open** to load one.
+6. Press **Save** to keep the recording, or **Open** to load one. If it was made for a selected app and that app is open, Auto Loop selects it again for you.
 
 What gets recorded:
 
@@ -72,7 +72,7 @@ Recordings replay **screen positions**. Auto Loop doesn't recognize buttons or w
 
 ![Settings](settings.png)
 
-Click a shortcut in **Settings** and press the new key or key combination. If another app already uses the default function keys, Auto Loop switches to Ctrl+Alt+F6–F9 and shows the active keys on its buttons. Playback can't start until a global Stop shortcut works.
+Click a shortcut in **Settings** and press the new key or key combination (Esc cancels). If another app already uses the default function keys, Auto Loop switches to Ctrl+Alt+F6–F9 and shows the active keys on its buttons. Playback can't start until a global Stop shortcut works.
 
 ## Why playback pauses
 
@@ -84,7 +84,7 @@ The status bar at the top of the screen shows the reason; hover over the status 
 - **Paused: the active app runs as administrator**: Windows blocks input to it from a normal app. Switch to another app, or run Auto Loop as administrator.
 - **Paused by you**: press Pause again to continue.
 
-Every held key and mouse button is released when playback pauses or stops. A repetition that was interrupted starts again from its first step. Closing the selected window stops playback.
+While Auto Loop counts down, plays or records, Windows won't go to sleep or turn off the screen; normal power settings return when it stops. Every held key and mouse button is released when playback pauses or stops. A repetition that was interrupted starts again from its first step. Closing the selected window stops playback.
 
 ## Files
 

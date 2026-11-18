@@ -25,6 +25,13 @@ PASS Countdown text and tray follow the countdown
 PASS Finished notice describes the run; Test once stays quiet
 PASS Last settings are remembered and bad ones ignored
 PASS Overlays never take focus; countdown and spot dot let clicks through
+PASS Double click sends two presses per repeat
+PASS Key combinations repeat with modifiers wrapped around the key
+PASS Keys carry hardware scan codes
+PASS Esc cancels the shortcut dialog but can be the repeated key
+PASS Opening a routine reselects its app when that window is open
+PASS PC stays awake only while running
+PASS Input hooks are only needed while recording or picking
 PASS File version matches product version
 PASS Engine repeats exactly and respects interval
 PASS Stop releases a held key

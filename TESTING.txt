@@ -1,7 +1,7 @@
-AUTO LOOP 0.7.0 — TEST SCOPE
+AUTO LOOP 0.7.1 — TEST SCOPE
 
 Run the built-in checks with:  "Auto Loop.exe" --self-test <empty folder>
-Results are written to internal-tests.txt in that folder. 69 checks pass; the
+Results are written to internal-tests.txt in that folder. 76 checks pass; the
 current list is in AUTOMATED-TEST-RESULTS.txt. Self-tests and previews never
 read or change your settings.xml.
 
@@ -29,7 +29,14 @@ WHAT THE CHECKS COVER
 - Overlays on screen: the status bar, countdown and spot dot are really shown;
   none becomes the active window, the countdown and dot let clicks through,
   the bar can be clicked and moves out of the way.
-- Hints: interval and Stop after descriptions for Click, Keys and Record.
+- Hints: interval and Stop after descriptions for Click, Double click, Keys
+  and Record.
+- 0.7.1: double-click timing and validation; key combinations pressed and
+  released in order and never left held; exact shortcut conflicts only; scan
+  codes on keys; Esc cancels the shortcut dialog but can be a repeated key;
+  opening a routine reselects its app or explains it is closed; the PC is kept
+  awake only while running; input hooks are needed only while recording or
+  picking.
 - Files: routine and settings round trip, remembered settings restored on the
   next start, invalid saved settings ignored, validation of invalid or
   unbalanced routines, and a visible message when settings can't be saved.

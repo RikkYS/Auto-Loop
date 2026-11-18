@@ -21,17 +21,18 @@ While it runs, a small bar at the top of the screen shows progress with **Pause*
 
 ## Features
 
-- **Click**: repeat left, right or middle clicks at the pointer or at a fixed screen position.
+- **Click**: repeat left, right, middle or double clicks at the pointer or at a fixed screen position.
+- **Keys**: repeat any key or combination, like F or Ctrl+C, at a set interval. Keys work in games that read raw input too.
 - **Plain-language hints**: "about 10 clicks per second" under the interval, and "about 600 clicks, then stops" in the status line, so you never have to work out milliseconds.
-- **Keys**: repeat any single key at a set interval.
 - **Record & replay**: capture mouse moves, clicks, drags, scrolling and keys, then loop them. Edit the delay before any step or remove steps.
 - **Stop rules**: stop after a number of repeats, after a number of seconds, or only when you press Stop.
 - **Any app or Selected app**: let input follow whichever window is active, or tie it to one app so it pauses the moment you switch away. Press **Pick app** and click the window you want, or choose it from the list.
 - **Always know what's happening**: a big 3-2-1 countdown, a floating status bar with Pause and Stop, a tray icon, and a "finished" notice.
-- **Remembers your settings** between launches, including the selected app when it's still open.
+- **Remembers your settings** between launches, and saved routines reselect their app when it's open.
+- **Long runs keep going**: your PC won't sleep or turn off the screen while Auto Loop is running.
 - **Global shortcuts** (changeable): F6 Start · F7 Record · F8 Pause · F9 Stop.
 - **Safety first**: Auto Loop refuses to start playback without a working Stop shortcut, releases every held key and button on stop or pause, and never sends input into its own windows.
-- **Portable**: settings and saved routines live next to the EXE. No accounts, telemetry or network access.
+- **Portable and private**: settings and saved routines live next to the EXE. No accounts, telemetry or network access, and keyboard and mouse hooks only run while you record or pick.
 
 ## Download
 
@@ -44,7 +45,7 @@ Needs 64-bit Windows 10 or 11 with .NET Framework 4.x, which is already installe
 > **"Windows protected your PC"?** The EXE isn't code-signed yet, so SmartScreen may warn you the first time. Choose **More info → Run anyway**. You can check the download against `SHA256SUMS.txt` from the release:
 >
 > ```powershell
-> Get-FileHash ".\Auto-Loop-0.7.0-Portable.zip" -Algorithm SHA256
+> Get-FileHash ".\Auto-Loop-0.7.1-Portable.zip" -Algorithm SHA256
 > ```
 
 ## Quick start: five clicks in Notepad

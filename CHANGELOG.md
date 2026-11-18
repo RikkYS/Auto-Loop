@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.1 (2026-11-18)
+
+Small improvements; the window looks exactly the same.
+
+### Added
+- **Double click** in the Click tab's mouse-button menu.
+- **Key combinations** in the Keys tab, such as Ctrl+C: modifiers are held around the key.
+- Your PC **stays awake** (no sleep, screen stays on) while Auto Loop counts down, plays or records.
+- Opening a saved routine **reselects its app** when that window is open.
+
+### Changed
+- Keys are sent with hardware scan codes, so they work in more games and apps.
+- The keyboard and mouse hooks only run while recording or picking, not while Auto Loop is idle.
+- Esc cancels the "set shortcut" dialog. (When choosing the key to repeat, Esc can still be chosen.)
+- Removed unused code.
+- 76 built-in checks (up from 69).
+
 ## 0.7.0 (2026-11-17)
 
 Easier to use, with the same window size and layout.
