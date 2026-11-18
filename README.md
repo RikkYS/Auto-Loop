@@ -1,13 +1,15 @@
 # Auto Loop
 
-**A small, portable Windows auto-clicker, key repeater and macro recorder. No scripts, no installer.**
-
-Repeat a mouse click, hold down a rhythm on one key, or record a sequence of clicks, keys and scrolls and play it back on a loop. Auto Loop is about 250 KB, runs from any folder you can write to, and never connects to the internet.
+**An auto-clicker, key repeater and macro recorder in one small window, with safety built in. No scripts, no installer.**
 
 [![Latest release](https://img.shields.io/github/v/release/RikkYS/Auto-Loop?include_prereleases&label=download)](https://github.com/RikkYS/Auto-Loop/releases/latest)
 ![Windows x64](https://img.shields.io/badge/Windows-x64-0078D6)
 ![.NET Framework 4.x](https://img.shields.io/badge/.NET_Framework-4.x-512BD4)
 [![MIT License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+![Auto Loop demo: press Start, a 3-2-1 countdown ring appears, ten clicks run with a status bar showing progress, then a "finished" notice](demo.png)
+
+Repeat a mouse click, repeat a key or combination, or record a sequence of clicks, keys and scrolls and play it back on a loop. Auto Loop is about 290 KB, runs from any folder you can write to, and never connects to the internet. With **Selected app** it never clicks outside the app you picked, it never leaves keys stuck down, and it always shows how to stop.
 
 | Click | Keys | Record |
 | --- | --- | --- |
