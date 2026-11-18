@@ -24,22 +24,39 @@ namespace AutoLoop {
     internal static class UiDrawing {
         public static GraphicsPath Round(Rectangle r,int radius){GraphicsPath p=new GraphicsPath();int d=Math.Max(2,radius*2);p.AddArc(r.Left,r.Top,d,d,180,90);p.AddArc(r.Right-d,r.Top,d,d,270,90);p.AddArc(r.Right-d,r.Bottom-d,d,d,0,90);p.AddArc(r.Left,r.Bottom-d,d,d,90,90);p.CloseFigure();return p;}
         public static void Face(Graphics g,Rectangle r,Color fill,Color border,int radius){g.SmoothingMode=SmoothingMode.AntiAlias;using(GraphicsPath p=Round(r,radius)){using(Brush b=new SolidBrush(fill))g.FillPath(b,p);if(border!=Color.Empty)using(Pen pen=new Pen(border))g.DrawPath(pen,p);}}
+        // The logo's mint-to-teal gradient, used for the selected choice and the Start button.
+        public static readonly Color BrandStart=Color.FromArgb(103,241,173),BrandEnd=Color.FromArgb(47,216,196),BrandInk=Color.FromArgb(6,35,28),BrandInkSoft=Color.FromArgb(13,74,58);
+        public static void BrandFace(Graphics g,Rectangle r,int radius,bool vertical){
+            g.SmoothingMode=SmoothingMode.AntiAlias;Rectangle area=Rectangle.Inflate(r,1,1);
+            using(GraphicsPath p=Round(r,radius))using(LinearGradientBrush b=new LinearGradientBrush(area,BrandStart,BrandEnd,vertical?90f:0f))g.FillPath(b,p);
+        }
     }
     internal class RoundedButton : Button {
-        bool hover;
+        bool hover,brand;
+        // Brand: painted with the logo gradient (the selected tab or choice).
+        public bool Brand{get{return brand;}set{if(brand!=value){brand=value;Invalidate();}}}
         public RoundedButton(){FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;DoubleBuffered=true;Cursor=Cursors.Hand;}
         protected override void OnMouseEnter(EventArgs e){hover=true;Invalidate();base.OnMouseEnter(e);}
         protected override void OnMouseLeave(EventArgs e){hover=false;Invalidate();base.OnMouseLeave(e);}
         protected override void OnPaintBackground(PaintEventArgs e){using(Brush background=new SolidBrush(Parent==null?BackColor:Parent.BackColor))e.Graphics.FillRectangle(background,ClientRectangle);}
-        protected override void OnPaint(PaintEventArgs e){using(Brush background=new SolidBrush(Parent==null?BackColor:Parent.BackColor))e.Graphics.FillRectangle(background,ClientRectangle);Color face=hover?ControlPaint.Light(BackColor,0.06f):BackColor;UiDrawing.Face(e.Graphics,new Rectangle(0,0,Width-1,Height-1),face,Color.FromArgb(48,64,81),6);TextFormatFlags alignment=TextAlign==ContentAlignment.MiddleLeft?TextFormatFlags.Left:TextFormatFlags.HorizontalCenter;int inset=UiScale.Layout>1f?UiScale.Px(6):10;TextRenderer.DrawText(e.Graphics,Text,Font,new Rectangle(inset,1,Width-2*inset,Height-2),Enabled?ForeColor:Color.FromArgb(120,135,150),alignment|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);}
+        protected override void OnPaint(PaintEventArgs e){using(Brush background=new SolidBrush(Parent==null?BackColor:Parent.BackColor))e.Graphics.FillRectangle(background,ClientRectangle);Color face=hover?ControlPaint.Light(BackColor,0.06f):BackColor;if(brand)UiDrawing.BrandFace(e.Graphics,new Rectangle(0,0,Width-1,Height-1),6,false);else UiDrawing.Face(e.Graphics,new Rectangle(0,0,Width-1,Height-1),face,Color.FromArgb(48,64,81),6);TextFormatFlags alignment=TextAlign==ContentAlignment.MiddleLeft?TextFormatFlags.Left:TextFormatFlags.HorizontalCenter;int inset=UiScale.Layout>1f?UiScale.Px(6):10;TextRenderer.DrawText(e.Graphics,Text,Font,new Rectangle(inset,1,Width-2*inset,Height-2),Enabled||brand?ForeColor:Color.FromArgb(120,135,150),alignment|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);}
     }
     internal class IconButton : RoundedButton {
         public string IconKind="settings";public bool Bare;
         protected override void OnPaint(PaintEventArgs e){Graphics g=e.Graphics;using(Brush background=new SolidBrush(Parent==null?BackColor:Parent.BackColor))g.FillRectangle(background,ClientRectangle);g.SmoothingMode=SmoothingMode.AntiAlias;if(!Bare)UiDrawing.Face(g,new Rectangle(0,0,Width-1,Height-1),BackColor,Color.FromArgb(48,64,81),6);g.TranslateTransform(Width/2f,Height/2f);g.ScaleTransform(UiScale.Layout,UiScale.Layout);float cx=0,cy=0;Color color=Enabled?ForeColor:Color.Gray;using(Pen pen=new Pen(color,2)){pen.StartCap=LineCap.Round;pen.EndCap=LineCap.Round;if(IconKind=="close"){g.DrawLine(pen,cx-5,cy-5,cx+5,cy+5);g.DrawLine(pen,cx+5,cy-5,cx-5,cy+5);}else if(IconKind=="minimize")g.DrawLine(pen,cx-6,cy,cx+6,cy);else if(IconKind=="refresh"){g.DrawArc(pen,cx-9,cy-9,18,18,215,145);g.DrawArc(pen,cx-9,cy-9,18,18,35,145);using(Brush b=new SolidBrush(color)){g.FillPolygon(b,new PointF[]{new PointF(cx+9,cy-9),new PointF(cx+9,cy),new PointF(cx+2,cy-4)});g.FillPolygon(b,new PointF[]{new PointF(cx-9,cy+9),new PointF(cx-9,cy),new PointF(cx-2,cy+4)});}}else{PointF[] points=new PointF[64];for(int i=0;i<64;i++){double a=i*Math.PI*2/64-Math.PI/2;double r=(i%8<2||i%8>5)?10:7.5;points[i]=new PointF(cx+(float)(Math.Cos(a)*r),cy+(float)(Math.Sin(a)*r));}using(Brush b=new SolidBrush(color))g.FillPolygon(b,points);using(Brush b=new SolidBrush(BackColor))g.FillEllipse(b,cx-4,cy-4,8,8);}}}
     }
     internal class LoopLogo : Control {
+        // The same logo artwork as the EXE icon and the GitHub banner (embedded Logo.png), drawn as a square tile.
+        static Image artwork;
+        static Image Artwork{get{if(artwork==null){try{using(System.IO.Stream s=System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("AutoLoop.Logo"))if(s!=null)using(Image raw=Image.FromStream(s))artwork=new Bitmap(raw);}catch{artwork=null;}}return artwork;}}
         public LoopLogo(){DoubleBuffered=true;}
-        protected override void OnPaint(PaintEventArgs e){e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;using(Brush background=new SolidBrush(Parent.BackColor))e.Graphics.FillRectangle(background,ClientRectangle);e.Graphics.ScaleTransform(Width/40f,Height/34f);using(Pen p=new Pen(Color.FromArgb(103,241,173),5)){p.StartCap=LineCap.Round;p.EndCap=LineCap.Round;using(GraphicsPath path=new GraphicsPath()){path.AddBezier(31,10,17,4,18,29,8,25);path.AddBezier(8,25,-4,20,6,4,15,13);path.AddBezier(15,13,23,19,23,30,32,25);path.AddBezier(32,25,39,21,38,15,35,12);e.Graphics.DrawPath(p,path);}}using(Brush b=new SolidBrush(Color.FromArgb(103,241,173)))e.Graphics.FillPolygon(b,new PointF[]{new PointF(29,3),new PointF(38,10),new PointF(28,15)});}
+        protected override void OnPaint(PaintEventArgs e){
+            using(Brush background=new SolidBrush(Parent.BackColor))e.Graphics.FillRectangle(background,ClientRectangle);
+            Image image=Artwork;
+            if(image!=null){int side=Math.Min(Width,Height);e.Graphics.InterpolationMode=InterpolationMode.HighQualityBicubic;e.Graphics.PixelOffsetMode=PixelOffsetMode.HighQuality;e.Graphics.DrawImage(image,new Rectangle(0,(Height-side)/2,side,side));return;}
+            DrawFallback(e);
+        }
+        void DrawFallback(PaintEventArgs e){e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;using(Brush background=new SolidBrush(Parent.BackColor))e.Graphics.FillRectangle(background,ClientRectangle);e.Graphics.ScaleTransform(Width/40f,Height/34f);using(Pen p=new Pen(Color.FromArgb(103,241,173),5)){p.StartCap=LineCap.Round;p.EndCap=LineCap.Round;using(GraphicsPath path=new GraphicsPath()){path.AddBezier(31,10,17,4,18,29,8,25);path.AddBezier(8,25,-4,20,6,4,15,13);path.AddBezier(15,13,23,19,23,30,32,25);path.AddBezier(32,25,39,21,38,15,35,12);e.Graphics.DrawPath(p,path);}}using(Brush b=new SolidBrush(Color.FromArgb(103,241,173)))e.Graphics.FillPolygon(b,new PointF[]{new PointF(29,3),new PointF(38,10),new PointF(28,15)});}
     }
     internal class StatusLabel : Label {
         protected override void OnPaint(PaintEventArgs e){e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;Color dot=Text.StartsWith("Paused")?Color.FromArgb(245,203,112):Color.FromArgb(68,220,143);int size=UiScale.Px(8),textLeft=UiScale.Px(17);using(Brush b=new SolidBrush(dot))e.Graphics.FillEllipse(b,1,Height/2-size/2,size,size);TextRenderer.DrawText(e.Graphics,Text,Font,new Rectangle(textLeft,0,Math.Max(0,Width-textLeft),Height),ForeColor,TextFormatFlags.Left|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);}

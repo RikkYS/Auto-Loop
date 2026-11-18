@@ -70,6 +70,70 @@ namespace AutoLoop {
         protected override void OnMouseUp(MouseEventArgs e){base.OnMouseUp(e);if(e.Button!=MouseButtons.Left)return;if(leftRect.Contains(e.Location)&&LeftClicked!=null)LeftClicked(this,EventArgs.Empty);else if(rightRect.Contains(e.Location)&&RightClicked!=null)RightClicked(this,EventArgs.Empty);}
     }
 
+    // The 3-2-1 countdown: a dark disc with a soft shadow and a mint-to-teal ring that drains every second, while the
+    // number pops in. It is a per-pixel-alpha window, so its edges and shadow are smooth, and clicks pass through it.
+    internal class CountdownRing : OverlayWindow {
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] struct PT{public int X,Y;}
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] struct SZ{public int W,H;}
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential,Pack=1)] struct BLEND{public byte Op,Flags,Alpha,Format;}
+        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool UpdateLayeredWindow(IntPtr hwnd,IntPtr hdcDst,ref PT pptDst,ref SZ psize,IntPtr hdcSrc,ref PT pptSrc,int crKey,ref BLEND pblend,int dwFlags);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr hwnd);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern int ReleaseDC(IntPtr hwnd,IntPtr hdc);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr hdc);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr hdc,IntPtr obj);
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
+        static readonly Color Disc=Color.FromArgb(232,11,17,24),Track=Color.FromArgb(22,255,255,255),Note=Color.FromArgb(166,182,198);
+        readonly Timer animation=new Timer{Interval=15};long deadline;string note="";
+        public CountdownRing(){int size=Px(168);Size=new Size(size,size);Text="Auto Loop countdown";animation.Tick+=delegate{Redraw();};}
+        protected override bool ClickThrough{get{return true;}}
+        protected override CreateParams CreateParams{get{CreateParams p=base.CreateParams;p.ExStyle|=0x80000;return p;}}
+        public string Number{get{double left=Remaining;return left>0?Math.Ceiling(left).ToString():"";}}
+        double Remaining{get{return Math.Max(0,(deadline-System.Diagnostics.Stopwatch.GetTimestamp())/(double)System.Diagnostics.Stopwatch.Frequency);}}
+        // Shows the countdown centred on the screen under the pointer and animates it until the deadline.
+        public void Run(long deadlineTimestamp,string caption,Point pointer){
+            deadline=deadlineTimestamp;note=caption;
+            Rectangle area=Screen.FromPoint(pointer).WorkingArea;Location=new Point(area.Left+(area.Width-Width)/2,area.Top+(area.Height-Height)/2);
+            if(!Visible){Show();}Redraw();animation.Start();
+        }
+        protected override void OnVisibleChanged(EventArgs e){base.OnVisibleChanged(e);if(!Visible)animation.Stop();}
+        protected override void Dispose(bool disposing){if(disposing)animation.Dispose();base.Dispose(disposing);}
+        void Redraw(){
+            if(!IsHandleCreated||!Visible)return;
+            double left=Remaining;if(left<=0){Hide();return;}
+            double intoSecond=1-(left-Math.Floor(left));if(intoSecond>=1)intoSecond=0;
+            using(Bitmap frame=new Bitmap(Width,Height,System.Drawing.Imaging.PixelFormat.Format32bppArgb)){
+                using(Graphics g=Graphics.FromImage(frame)){g.Clear(Color.Transparent);DrawFrame(g,Math.Ceiling(left).ToString(),left-Math.Floor(left)==0?1:left-Math.Floor(left),intoSecond,note);}
+                Push(frame);
+            }
+        }
+        void Push(Bitmap frame){
+            IntPtr screen=GetDC(IntPtr.Zero),memory=CreateCompatibleDC(screen),bitmap=frame.GetHbitmap(Color.FromArgb(0)),old=SelectObject(memory,bitmap);
+            try{PT dst=new PT{X=Left,Y=Top},src=new PT();SZ size=new SZ{W=frame.Width,H=frame.Height};BLEND blend=new BLEND{Op=0,Flags=0,Alpha=255,Format=1};UpdateLayeredWindow(Handle,screen,ref dst,ref size,memory,ref src,0,ref blend,2);}
+            finally{SelectObject(memory,old);DeleteObject(bitmap);DeleteDC(memory);ReleaseDC(IntPtr.Zero,screen);}
+        }
+        // ring: fraction of the ring still showing (1 = full); intoSecond: 0..1 time since the number changed.
+        void DrawFrame(Graphics g,string number,double ring,double intoSecond,string caption){
+            g.SmoothingMode=SmoothingMode.AntiAlias;g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            float size=Width,disc=Px(132),x=(size-disc)/2,y=(size-disc)/2-Px(4);
+            for(int i=8;i>=1;i--){float grow=Px(i*1.6f);using(Brush shadow=new SolidBrush(Color.FromArgb(9,0,0,0)))g.FillEllipse(shadow,x-grow,y-grow+Px(6),disc+2*grow,disc+2*grow);}
+            using(Brush fill=new SolidBrush(Disc))g.FillEllipse(fill,x,y,disc,disc);
+            float inset=Px(9),stroke=Px(6);RectangleF track=new RectangleF(x+inset,y+inset,disc-2*inset,disc-2*inset);
+            using(Pen pen=new Pen(Track,stroke))g.DrawEllipse(pen,track);
+            float sweep=(float)(360*Math.Max(0,Math.Min(1,ring)));
+            if(sweep>0.5f)using(LinearGradientBrush brush=new LinearGradientBrush(Rectangle.Round(RectangleF.Inflate(track,stroke,stroke)),UiDrawing.BrandStart,UiDrawing.BrandEnd,45f))using(Pen arc=new Pen(brush,stroke){StartCap=LineCap.Round,EndCap=LineCap.Round})g.DrawArc(arc,track,-90,sweep);
+            double pop=Math.Min(1,intoSecond/0.18);float scale=(float)(0.82+0.18*EaseOut(pop));int alpha=(int)(255*Math.Min(1,pop*1.2));
+            GraphicsState state=g.Save();float cx=x+disc/2,cy=y+disc/2-Px(6);g.TranslateTransform(cx,cy);g.ScaleTransform(scale,scale);
+            using(Font font=new Font("Segoe UI",Px(54),FontStyle.Regular,GraphicsUnit.Pixel))using(Brush ink=new SolidBrush(Color.FromArgb(alpha,255,255,255)))using(StringFormat center=new StringFormat{Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center})g.DrawString(number,font,ink,0,0,center);
+            g.Restore(state);
+            using(Font small=new Font("Segoe UI",Px(11),FontStyle.Regular,GraphicsUnit.Pixel))using(Brush ink=new SolidBrush(Note))using(StringFormat center=new StringFormat{Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center})g.DrawString(caption,small,ink,new RectangleF(x,y+disc*0.66f,disc,Px(20)),center);
+        }
+        static double EaseOut(double t){return 1-Math.Pow(1-t,3);}
+        // Still image for previews and the README: "2" with the ring two-thirds full.
+        protected override void PaintOverlay(Graphics g,bool image){DrawFrame(g,"2",0.66,1,note.Length>0?note:"F9 cancels");}
+        public void SetPreviewNote(string caption){note=caption;}
+    }
+
     // Round, click-through badge: the big 3-2-1 countdown, or the small dot that marks a picked click spot.
     internal class ScreenBadge : OverlayWindow {
         readonly bool dotStyle;string big="",small="";

@@ -12,7 +12,7 @@ This guide walks through each part of Auto Loop. For download and install steps,
 2. Set the **Interval**. The line under it says what it means, for example "about 10 clicks per second". The shortest interval is 10 ms.
 3. Choose **Stop after**: a number of repeats, a number of seconds, or **Until stopped**. The status line at the bottom says what will happen, for example "Ready · about 600 clicks, then stops". Time spent paused doesn't count toward the seconds.
 4. Choose **Any app**, or **Selected app** and the app to use (see below).
-5. Press **Start**. Auto Loop minimizes and a big 3-2-1 countdown appears in the middle of the screen; switch to your app before it reaches zero.
+5. Press **Start**. Auto Loop minimizes and a 3-2-1 countdown ring appears in the middle of the screen; switch to your app before it reaches zero.
 6. Press **F9**, or **Stop** on the status bar, to stop.
 
 By default a click happens wherever the pointer is. To always click the same spot, open **Settings**, press **Pick spot**, and click the spot on screen. A small green dot briefly marks it. You can also type the X and Y coordinates. Turn off **Always click at the same screen position** to click at the pointer again.

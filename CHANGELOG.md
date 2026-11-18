@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.2 (2026-11-18)
+
+A polished look; same size, layout and behavior.
+
+### Changed
+- The window now shows the **real Auto Loop logo**, the same artwork as the EXE icon, tray icon and GitHub banner.
+- The selected tab, the selected "Any app"/"Selected app" choice and the **Start** button use the logo's mint-to-teal gradient, so the main action stands out.
+- **New countdown**: a smooth progress ring with a soft shadow that drains each second around the number, which pops in. Its edges are fully smooth and clicks still pass through it.
+- 77 built-in checks (up from 76).
+
 ## 0.7.1 (2026-11-18)
 
 Small improvements; the window looks exactly the same.

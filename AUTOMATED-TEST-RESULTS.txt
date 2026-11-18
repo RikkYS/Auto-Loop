@@ -32,6 +32,7 @@ PASS Esc cancels the shortcut dialog but can be the repeated key
 PASS Opening a routine reselects its app when that window is open
 PASS PC stays awake only while running
 PASS Input hooks are only needed while recording or picking
+PASS Countdown ring counts down, draws smoothly and hides at zero
 PASS File version matches product version
 PASS Engine repeats exactly and respects interval
 PASS Stop releases a held key

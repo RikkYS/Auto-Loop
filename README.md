@@ -15,7 +15,7 @@ Repeat a mouse click, hold down a rhythm on one key, or record a sequence of cli
 
 While it runs, a small bar at the top of the screen shows progress with **Pause** and **Stop**, an icon sits by the clock, and Windows tells you when it's finished.
 
-| Status bar while running | Countdown before it starts |
+| Status bar while running | Countdown ring before it starts |
 | --- | --- |
 | ![Floating status bar: Running 37 of 600, with Pause F8 and Stop F9](status-bar.png) | ![Countdown circle showing 2, Starting, F9 cancels](countdown.png) |
 
@@ -45,7 +45,7 @@ Needs 64-bit Windows 10 or 11 with .NET Framework 4.x, which is already installe
 > **"Windows protected your PC"?** The EXE isn't code-signed yet, so SmartScreen may warn you the first time. Choose **More info → Run anyway**. You can check the download against `SHA256SUMS.txt` from the release:
 >
 > ```powershell
-> Get-FileHash ".\Auto-Loop-0.7.1-Portable.zip" -Algorithm SHA256
+> Get-FileHash ".\Auto-Loop-0.7.2-Portable.zip" -Algorithm SHA256
 > ```
 
 ## Quick start: five clicks in Notepad

@@ -1,7 +1,7 @@
-AUTO LOOP 0.7.1 — TEST SCOPE
+AUTO LOOP 0.7.2 — TEST SCOPE
 
 Run the built-in checks with:  "Auto Loop.exe" --self-test <empty folder>
-Results are written to internal-tests.txt in that folder. 76 checks pass; the
+Results are written to internal-tests.txt in that folder. 77 checks pass; the
 current list is in AUTOMATED-TEST-RESULTS.txt. Self-tests and previews never
 read or change your settings.xml.
 
@@ -37,6 +37,8 @@ WHAT THE CHECKS COVER
   opening a routine reselects its app or explains it is closed; the PC is kept
   awake only while running; input hooks are needed only while recording or
   picking.
+- 0.7.2: the countdown ring counts down, has smooth transparent edges, hides
+  at zero, never takes focus and lets clicks through.
 - Files: routine and settings round trip, remembered settings restored on the
   next start, invalid saved settings ignored, validation of invalid or
   unbalanced routines, and a visible message when settings can't be saved.
