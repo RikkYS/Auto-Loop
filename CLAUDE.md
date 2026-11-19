@@ -37,7 +37,7 @@
   - [x] AlternativeTo submitted 2026-11-19, free queue, awaiting review → `alternativeto.md`
   - [-] Softpedia skipped (requires "No AI-written code"); MajorGeeks has no submission form → `download-sites.md`
   - [ ] Reddit (r/software, r/windows, r/opensource, r/SideProject; rules unverified, check each sidebar first) → `reddit.md`
-  - [ ] Show HN → `show-hn.md`
+  - [ ] Show HN: user only, in their own words (HN bans generated text and automated posting); draft is notes → `show-hn.md`
   - [ ] Product Hunt → `product-hunt.md`
   - [ ] awesome-windows (now 0PandaDEV/awesome-windows; needs 50 stars, wait) → `awesome-windows.md`
 - Later: Phase 3 winget/Scoop/Chocolatey packages and SignPath code signing; Phase 4 feedback-driven 0.8.
