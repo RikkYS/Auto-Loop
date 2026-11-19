@@ -47,7 +47,7 @@ Needs 64-bit Windows 10 or 11 with .NET Framework 4.x, which is already installe
 > **"Windows protected your PC"?** The EXE isn't code-signed yet, so SmartScreen may warn you the first time. Choose **More info → Run anyway**. You can check the download against `SHA256SUMS.txt` from the release:
 >
 > ```powershell
-> Get-FileHash ".\Auto-Loop-0.7.2-Portable.zip" -Algorithm SHA256
+> Get-FileHash ".\Auto-Loop-0.7.3-Portable.zip" -Algorithm SHA256
 > ```
 
 **Virus scan:** [VirusTotal results for Auto Loop 0.7.2](https://www.virustotal.com/gui/file/9e5f07acc6c8cb455502b62976ba6731887e1e2d907e5f418c2ac719295b39b7). 2 of 69 scanners (Bkav Pro and SecureAge) flag it with generic detections that unsigned tools which send clicks and keys often get. Microsoft Defender, Kaspersky, ESET, Bitdefender, Malwarebytes and the others report it clean, and the source code is here for anyone to check.

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.3 (2026-11-19)
+
+Reliability fixes and a version line in Settings. The main window looks exactly the same.
+
+### Added
+- The bottom of **Settings** shows your version and a **Check for updates** link to the latest release.
+
+### Fixed
+- **Exact speed**: each repeat is timed from its planned start and Windows' timer runs at 1 ms while playing, so the real speed now matches the interval (a 100 ms interval could run up to about 10% slow before).
+- A damaged or invalid `settings.xml` is no longer silently replaced: it is kept as `settings.bad.xml` and the status line says so.
+- Internal errors are reported as errors instead of "input could not be sent", and an error inside the input hooks now stops safely and is reported instead of being hidden.
+- If Windows stops passing input to the recorder, the recording stops and keeps what was captured instead of silently missing input.
+- The countdown ring no longer creates new fonts and brushes for every frame.
+- 82 built-in checks (up from 77).
+
 ## 0.7.2 (2026-11-18)
 
 A polished look; same size, layout and behavior.

@@ -74,6 +74,8 @@ Recordings replay **screen positions**. Auto Loop doesn't recognize buttons or w
 
 Click a shortcut in **Settings** and press the new key or key combination (Esc cancels). If another app already uses the default function keys, Auto Loop switches to Ctrl+Alt+F6–F9 and shows the active keys on its buttons. Playback can't start until a global Stop shortcut works.
 
+The bottom of Settings shows which version you have. **Check for updates** opens the latest release on GitHub; Auto Loop never connects to the internet by itself.
+
 ## Why playback pauses
 
 The status bar at the top of the screen shows the reason; hover over the status line in the main window for more detail.
@@ -88,4 +90,4 @@ While Auto Loop counts down, plays or records, Windows won't go to sleep or turn
 
 ## Files
 
-Auto Loop keeps `settings.xml` and the `Routines` folder next to `Auto Loop.exe`. `settings.xml` holds your shortcuts and the settings you used last, so Auto Loop opens the way you left it (recordings are only kept when you save them). If Windows doesn't let it write there, the status line says **Settings not saved**. Move Auto Loop to a folder you own, such as one in Documents. Copy those files along if you move Auto Loop.
+Auto Loop keeps `settings.xml` and the `Routines` folder next to `Auto Loop.exe`. `settings.xml` holds your shortcuts and the settings you used last, so Auto Loop opens the way you left it (recordings are only kept when you save them). If Windows doesn't let it write there, the status line says **Settings not saved**. Move Auto Loop to a folder you own, such as one in Documents. Copy those files along if you move Auto Loop. If `settings.xml` is damaged, Auto Loop starts with default settings, keeps the old file as `settings.bad.xml` and says so on the status line.

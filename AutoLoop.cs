@@ -12,8 +12,8 @@ using System.Xml.Serialization;
 
 [assembly: System.Reflection.AssemblyTitle("Auto Loop")]
 [assembly: System.Reflection.AssemblyProduct("Auto Loop")]
-[assembly: System.Reflection.AssemblyVersion("0.7.2.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.7.2.0")]
+[assembly: System.Reflection.AssemblyVersion("0.7.3.0")]
+[assembly: System.Reflection.AssemblyFileVersion("0.7.3.0")]
 namespace AutoLoop {
     public class Step {
         public string Kind = "Wait";
@@ -203,6 +203,8 @@ namespace AutoLoop {
         readonly Dictionary<uint,bool> elevationCache=new Dictionary<uint,bool>(); bool? selfElevated;
         // Input that happens this close to a focus change is treated as the action that caused it.
         const int FocusSwitchWindowMs=250;
+        const string ReleasesUrl="https://github.com/RikkYS/Auto-Loop/releases/latest";
+        internal static string AppVersion{get{Version v=typeof(MainForm).Assembly.GetName().Version;return v.Major+"."+v.Minor+"."+v.Build;}}
         // Waits may shorten by up to one timer tick to keep the repeat rate exact. A longer stall restarts the schedule instead, so presses never merge.
         const long MaxCatchUpMs=16;
         public static string KeyName(int key) { return new KeysConverter().ConvertToString((Keys)key); }
@@ -290,7 +292,7 @@ namespace AutoLoop {
 
         void ScaleCompactFonts(Control root){List<Control> all=new List<Control>();Action<Control> walk=null;walk=delegate(Control c){all.Add(c);foreach(Control child in c.Controls)walk(child);};walk(root);float fontFactor=0.74f*UiScale.Simulated,itemFactor=0.74f*UiScale.Layout;Font[] fonts=all.Select(c=>new Font(c.Font.FontFamily,c.Font.Size*fontFactor,c.Font.Style)).ToArray();for(int i=0;i<all.Count;i++){all[i].Font=fonts[i];DarkComboBox combo=all[i] as DarkComboBox;if(combo!=null)combo.ItemHeight=(int)(combo.ItemHeight*itemFactor);}keyCapture.Size=mouse.Size;events.ItemHeight=UiScale.Px(24);recordCount.Visible=false;}
         void BuildSettings() {
-            settingsWindow=new ThemedDialog{Text="Auto Loop · Settings",ClientSize=new Size(490,450),Font=new Font("Segoe UI",12),BackColor=bg,ForeColor=ink,StartPosition=FormStartPosition.CenterParent,FormBorderStyle=FormBorderStyle.None,MaximizeBox=false,MinimizeBox=false};
+            settingsWindow=new ThemedDialog{Text="Auto Loop · Settings",ClientSize=new Size(490,478),Font=new Font("Segoe UI",12),BackColor=bg,ForeColor=ink,StartPosition=FormStartPosition.CenterParent,FormBorderStyle=FormBorderStyle.None,MaximizeBox=false,MinimizeBox=false};
             FlowLayoutPanel page=new FlowLayoutPanel{Dock=DockStyle.Fill,Padding=new Padding(18),FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true};settingsWindow.Controls.Add(page);
             page.Controls.Add(new Label{Text="Shortcuts",Font=new Font("Segoe UI",13,FontStyle.Bold),AutoSize=true,ForeColor=accent});
             FlowLayoutPanel keyRow=new FlowLayoutPanel{Width=446,Height=88,WrapContents=true};string[] names={"Start","Record","Pause","Stop"};for(int i=0;i<4;i++){int n=i;shortcuts[i]=ButtonFor(names[i],212);shortcuts[i].Click+=delegate{ChangeShortcut(n);};keyRow.Controls.Add(shortcuts[i]);}page.Controls.Add(keyRow);
@@ -299,7 +301,11 @@ namespace AutoLoop {
             page.Controls.Add(new Label{Text="Click position",Font=new Font("Segoe UI",12,FontStyle.Bold),AutoSize=true,ForeColor=accent,Margin=new Padding(0,12,0,5)});
             fixedPosition=new MintCheckBox{Text="Always click at the same screen position",AutoSize=true};page.Controls.Add(fixedPosition);
             FlowLayoutPanel position=Row();position.Dock=DockStyle.None;position.Width=446;position.Height=42;px=Number(-100000,100000,0,85);py=Number(-100000,100000,0,85);Button pick=ButtonFor("Pick spot",110);tips.SetToolTip(pick,"Click here, then click the spot on screen Auto Loop should click.");pick.Click+=delegate{settingsWindow.Hide();StartPick(PickKind.Spot);};position.Controls.Add(LabelFor("X"));position.Controls.Add(px);position.Controls.Add(LabelFor("Y"));position.Controls.Add(py);position.Controls.Add(pick);page.Controls.Add(position);
-            FlowLayoutPanel files=Row();files.Dock=DockStyle.None;files.Width=446;files.Height=44;Button save=ButtonFor("Save routine",140);save.Click+=delegate{SaveRoutine();};Button open=ButtonFor("Open routine",140);open.Click+=delegate{LoadRoutine();};Button done=ButtonFor("Done",100);done.DialogResult=DialogResult.OK;files.Controls.Add(save);files.Controls.Add(open);files.Controls.Add(done);page.Controls.Add(files);settingsWindow.AcceptButton=done;settingsWindow.CancelButton=done;
+            FlowLayoutPanel files=Row();files.Dock=DockStyle.None;files.Width=446;files.Height=44;Button save=ButtonFor("Save routine",140);save.Click+=delegate{SaveRoutine();};Button open=ButtonFor("Open routine",140);open.Click+=delegate{LoadRoutine();};Button done=ButtonFor("Done",100);done.DialogResult=DialogResult.OK;files.Controls.Add(save);files.Controls.Add(open);files.Controls.Add(done);page.Controls.Add(files);
+            string about="Auto Loop "+AppVersion+"  ·  ",check="Check for updates";
+            LinkLabel version=new LinkLabel{Text=about+check,AutoSize=true,Font=new Font("Segoe UI",10),ForeColor=muted,LinkColor=accent,ActiveLinkColor=accent,VisitedLinkColor=accent,LinkBehavior=LinkBehavior.HoverUnderline,LinkArea=new LinkArea(about.Length,check.Length),Margin=new Padding(3,8,0,0)};
+            version.LinkClicked+=delegate{try{Process.Start(ReleasesUrl);}catch(System.ComponentModel.Win32Exception e){Message("Could not open the browser: "+e.Message);}};
+            page.Controls.Add(version);settingsWindow.AcceptButton=done;settingsWindow.CancelButton=done;
             settingsWindow.FormClosing+=delegate(object sender,FormClosingEventArgs e){if(e.CloseReason==CloseReason.UserClosing){e.Cancel=true;settingsWindow.Hide();}};
         }
 

@@ -1,4 +1,4 @@
-AUTO LOOP 0.7.2 — TEST SCOPE
+AUTO LOOP 0.7.3 — TEST SCOPE
 
 Run the built-in checks with:  "Auto Loop.exe" --self-test <empty folder>
 Results are written to internal-tests.txt in that folder. 82 checks pass; the
@@ -39,6 +39,12 @@ WHAT THE CHECKS COVER
   picking.
 - 0.7.2: the countdown ring counts down, has smooth transparent edges, hides
   at zero, never takes focus and lets clicks through.
+- 0.7.3: repeat rate stays on schedule when timer ticks arrive late; an
+  internal error or hook failure is reported as such, not as blocked input;
+  dropped input hooks are detected, including across the tick-count
+  wraparound; shortcut sets need four distinct valid keys; a damaged or
+  invalid settings.xml is kept as settings.bad.xml and never overwritten; the
+  logo resource decodes to a square image.
 - Files: routine and settings round trip, remembered settings restored on the
   next start, invalid saved settings ignored, validation of invalid or
   unbalanced routines, and a visible message when settings can't be saved.

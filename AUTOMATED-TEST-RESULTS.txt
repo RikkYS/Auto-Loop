@@ -43,6 +43,11 @@ PASS Recording reserves releases and rejects a partial mouse event at the limit
 PASS Focus loss releases and pauses; returning resumes
 PASS Automatic resume can be disabled
 PASS Time limit stops and releases
+PASS Internal errors are not reported as blocked input
+PASS Repeat rate holds when timer ticks arrive late
+PASS Dropped input hooks are detected across tick wraparound
+PASS Shortcut sets need four distinct, valid main keys
+PASS Unreadable settings are kept aside, never overwritten
 PASS Input failure stops playback
 PASS Recording preserves unfinished held duration
 PASS Injected keyboard events are ignored by recorder
