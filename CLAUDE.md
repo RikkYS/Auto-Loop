@@ -28,13 +28,13 @@
 - Input hooks run only while recording or picking; the PC is kept awake only while running.
 - Versions: patch = fixes, minor = features; 1.0 only after real-world testing and code signing. Replacing a release in place is OK only if it has 0 downloads.
 - Self-tests and previews must never read or change the user's settings.xml (Isolated mode).
-- The user posts and submits to sites and uploads the social preview banner themselves; prepare the material, don't post.
+- Claude may fill in and submit listings/posts in the user's signed-in browser, but asks before every final submit and never pays (decline paid "priority" options). Reddit is blocked for Claude's browsers: the user posts there.
 
 ## Status
 - Current release: v0.7.3 (latest, 2026-11-19): engine hardening, version line + Check for updates link in Settings (Settings window 490×478). VirusTotal: 2/70 generic flags (Bkav Pro, SecureAge), linked in README and release notes.
 - Phase 1 (page polish: demo, pitch, VirusTotal, banner): done.
 - Phase 2 (get found): all drafts written in `promo/phase2/` (2026-11-19); the user posts them. Status per site:
-  - [ ] AlternativeTo → `alternativeto.md`
+  - [x] AlternativeTo submitted 2026-11-19, free queue, awaiting review → `alternativeto.md`
   - [ ] Softpedia and MajorGeeks → `download-sites.md`
   - [ ] Reddit (r/software, r/windows, r/opensource, r/SideProject; rules unverified, check each sidebar first) → `reddit.md`
   - [ ] Show HN → `show-hn.md`
