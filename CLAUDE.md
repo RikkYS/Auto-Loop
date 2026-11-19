@@ -35,7 +35,7 @@
 - Phase 1 (page polish: demo, pitch, VirusTotal, banner): done.
 - Phase 2 (get found): all drafts written in `promo/phase2/` (2026-11-19); the user posts them. Status per site:
   - [x] AlternativeTo submitted 2026-11-19, free queue, awaiting review → `alternativeto.md`
-  - [ ] Softpedia and MajorGeeks → `download-sites.md`
+  - [-] Softpedia skipped (requires "No AI-written code"); MajorGeeks has no submission form → `download-sites.md`
   - [ ] Reddit (r/software, r/windows, r/opensource, r/SideProject; rules unverified, check each sidebar first) → `reddit.md`
   - [ ] Show HN → `show-hn.md`
   - [ ] Product Hunt → `product-hunt.md`
