@@ -33,15 +33,15 @@
 ## Status
 - Current release: v0.7.3 (latest, 2026-11-19): engine hardening, version line + Check for updates link in Settings (Settings window 490×478). VirusTotal: 2/70 generic flags (Bkav Pro, SecureAge), linked in README and release notes.
 - Phase 1 (page polish: demo, pitch, VirusTotal, banner): done.
-- Phase 2 (get found), drafts in `promo/phase2/`:
-  - [ ] AlternativeTo listing → `promo/phase2/alternativeto.md`
-  - [ ] Softpedia and MajorGeeks submissions → `promo/phase2/download-sites.md`
-  - [ ] Reddit posts (r/software, r/windows, r/opensource, r/SideProject) → `promo/phase2/reddit.md`
-  - [ ] Show HN post → `promo/phase2/show-hn.md`
-  - [ ] Product Hunt launch kit → `promo/phase2/product-hunt.md`
-  - [ ] awesome-windows list entry → `promo/phase2/awesome-windows.md`
+- Phase 2 (get found): all drafts written in `promo/phase2/` (2026-11-19); the user posts them. Status per site:
+  - [ ] AlternativeTo → `alternativeto.md`
+  - [ ] Softpedia and MajorGeeks → `download-sites.md`
+  - [ ] Reddit (r/software, r/windows, r/opensource, r/SideProject; rules unverified, check each sidebar first) → `reddit.md`
+  - [ ] Show HN → `show-hn.md`
+  - [ ] Product Hunt → `product-hunt.md`
+  - [ ] awesome-windows (now 0PandaDEV/awesome-windows; needs 50 stars, wait) → `awesome-windows.md`
 - Later: Phase 3 winget/Scoop/Chocolatey packages and SignPath code signing; Phase 4 feedback-driven 0.8.
-- Next step: write the AlternativeTo listing into `promo/phase2/alternativeto.md`.
+- Next step: the user submits the Phase 2 drafts; update links and checkboxes as they go live.
 
 ## How to work
 - Read only the files the task needs; search instead of scanning the whole project.
