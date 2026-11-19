@@ -36,7 +36,7 @@
 - Phase 2 (get found): all drafts written in `promo/phase2/` (2026-11-19); the user posts them. Status per site:
   - [x] AlternativeTo submitted 2026-11-19, free queue, awaiting review → `alternativeto.md`
   - [-] Softpedia skipped (requires "No AI-written code"); MajorGeeks has no submission form → `download-sites.md`
-  - [ ] Reddit (r/software, r/windows, r/opensource, r/SideProject; rules unverified, check each sidebar first) → `reddit.md`
+  - [ ] Reddit: r/SideProject posted 2026-11-19 by the user; next r/software (one sub per day, in the user's own words; Claude's browsers can't open Reddit) → `reddit.md`
   - [ ] Show HN: user only, in their own words (HN bans generated text and automated posting); draft is notes → `show-hn.md`
   - [ ] Product Hunt → `product-hunt.md`
   - [ ] awesome-windows (now 0PandaDEV/awesome-windows; needs 50 stars, wait) → `awesome-windows.md`
