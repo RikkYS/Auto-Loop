@@ -1,7 +1,7 @@
 AUTO LOOP 0.7.2 — TEST SCOPE
 
 Run the built-in checks with:  "Auto Loop.exe" --self-test <empty folder>
-Results are written to internal-tests.txt in that folder. 77 checks pass; the
+Results are written to internal-tests.txt in that folder. 82 checks pass; the
 current list is in AUTOMATED-TEST-RESULTS.txt. Self-tests and previews never
 read or change your settings.xml.
 

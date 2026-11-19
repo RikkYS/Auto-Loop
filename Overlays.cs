@@ -85,6 +85,10 @@ namespace AutoLoop {
         [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
         static readonly Color Disc=Color.FromArgb(232,11,17,24),Track=Color.FromArgb(22,255,255,255),Note=Color.FromArgb(166,182,198);
         readonly Timer animation=new Timer{Interval=15};long deadline;string note="";
+        readonly Font numberFont=new Font("Segoe UI",Px(54),FontStyle.Regular,GraphicsUnit.Pixel),noteFont=new Font("Segoe UI",Px(11),FontStyle.Regular,GraphicsUnit.Pixel);
+        readonly Brush shadowBrush=new SolidBrush(Color.FromArgb(9,0,0,0)),discBrush=new SolidBrush(Disc),noteBrush=new SolidBrush(Note);
+        readonly Pen trackPen=new Pen(Track,Px(6));
+        readonly StringFormat centered=new StringFormat{Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center};
         public CountdownRing(){int size=Px(168);Size=new Size(size,size);Text="Auto Loop countdown";animation.Tick+=delegate{Redraw();};}
         protected override bool ClickThrough{get{return true;}}
         protected override CreateParams CreateParams{get{CreateParams p=base.CreateParams;p.ExStyle|=0x80000;return p;}}
@@ -97,13 +101,13 @@ namespace AutoLoop {
             if(!Visible){Show();}Redraw();animation.Start();
         }
         protected override void OnVisibleChanged(EventArgs e){base.OnVisibleChanged(e);if(!Visible)animation.Stop();}
-        protected override void Dispose(bool disposing){if(disposing)animation.Dispose();base.Dispose(disposing);}
+        protected override void Dispose(bool disposing){if(disposing){foreach(IDisposable d in new IDisposable[]{animation,numberFont,noteFont,shadowBrush,discBrush,noteBrush,trackPen,centered})d.Dispose();}base.Dispose(disposing);}
         void Redraw(){
             if(!IsHandleCreated||!Visible)return;
             double left=Remaining;if(left<=0){Hide();return;}
-            double intoSecond=1-(left-Math.Floor(left));if(intoSecond>=1)intoSecond=0;
+            double ceiling=Math.Ceiling(left),secondLeft=1-(ceiling-left);
             using(Bitmap frame=new Bitmap(Width,Height,System.Drawing.Imaging.PixelFormat.Format32bppArgb)){
-                using(Graphics g=Graphics.FromImage(frame)){g.Clear(Color.Transparent);DrawFrame(g,Math.Ceiling(left).ToString(),left-Math.Floor(left)==0?1:left-Math.Floor(left),intoSecond,note);}
+                using(Graphics g=Graphics.FromImage(frame)){g.Clear(Color.Transparent);DrawFrame(g,ceiling.ToString(),secondLeft,1-secondLeft,note);}
                 Push(frame);
             }
         }
@@ -116,17 +120,17 @@ namespace AutoLoop {
         void DrawFrame(Graphics g,string number,double ring,double intoSecond,string caption){
             g.SmoothingMode=SmoothingMode.AntiAlias;g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
             float size=Width,disc=Px(132),x=(size-disc)/2,y=(size-disc)/2-Px(4);
-            for(int i=8;i>=1;i--){float grow=Px(i*1.6f);using(Brush shadow=new SolidBrush(Color.FromArgb(9,0,0,0)))g.FillEllipse(shadow,x-grow,y-grow+Px(6),disc+2*grow,disc+2*grow);}
-            using(Brush fill=new SolidBrush(Disc))g.FillEllipse(fill,x,y,disc,disc);
-            float inset=Px(9),stroke=Px(6);RectangleF track=new RectangleF(x+inset,y+inset,disc-2*inset,disc-2*inset);
-            using(Pen pen=new Pen(Track,stroke))g.DrawEllipse(pen,track);
+            for(int i=8;i>=1;i--){float grow=Px(i*1.6f);g.FillEllipse(shadowBrush,x-grow,y-grow+Px(6),disc+2*grow,disc+2*grow);}
+            g.FillEllipse(discBrush,x,y,disc,disc);
+            float inset=Px(9),stroke=trackPen.Width;RectangleF track=new RectangleF(x+inset,y+inset,disc-2*inset,disc-2*inset);
+            g.DrawEllipse(trackPen,track);
             float sweep=(float)(360*Math.Max(0,Math.Min(1,ring)));
             if(sweep>0.5f)using(LinearGradientBrush brush=new LinearGradientBrush(Rectangle.Round(RectangleF.Inflate(track,stroke,stroke)),UiDrawing.BrandStart,UiDrawing.BrandEnd,45f))using(Pen arc=new Pen(brush,stroke){StartCap=LineCap.Round,EndCap=LineCap.Round})g.DrawArc(arc,track,-90,sweep);
             double pop=Math.Min(1,intoSecond/0.18);float scale=(float)(0.82+0.18*EaseOut(pop));int alpha=(int)(255*Math.Min(1,pop*1.2));
             GraphicsState state=g.Save();float cx=x+disc/2,cy=y+disc/2-Px(6);g.TranslateTransform(cx,cy);g.ScaleTransform(scale,scale);
-            using(Font font=new Font("Segoe UI",Px(54),FontStyle.Regular,GraphicsUnit.Pixel))using(Brush ink=new SolidBrush(Color.FromArgb(alpha,255,255,255)))using(StringFormat center=new StringFormat{Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center})g.DrawString(number,font,ink,0,0,center);
+            using(Brush ink=new SolidBrush(Color.FromArgb(alpha,255,255,255)))g.DrawString(number,numberFont,ink,0,0,centered);
             g.Restore(state);
-            using(Font small=new Font("Segoe UI",Px(11),FontStyle.Regular,GraphicsUnit.Pixel))using(Brush ink=new SolidBrush(Note))using(StringFormat center=new StringFormat{Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center})g.DrawString(caption,small,ink,new RectangleF(x,y+disc*0.66f,disc,Px(20)),center);
+            g.DrawString(caption,noteFont,noteBrush,new RectangleF(x,y+disc*0.66f,disc,Px(20)),centered);
         }
         static double EaseOut(double t){return 1-Math.Pow(1-t,3);}
         // Still image for previews and the README: "2" with the ring two-thirds full.

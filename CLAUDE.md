@@ -4,7 +4,7 @@
 - Portable Windows auto-clicker, key repeater and macro recorder (Click / Keys / Record tabs). Simple by design, no scripting.
 - C# on .NET Framework 4.x, WinForms, x64. Built with the in-box csc (C# 5: no `?.`, string interpolation or `=>` members).
 - GitHub: https://github.com/RikkYS/Auto-Loop (MIT, owner RikkYS). Solo project: commit straight to `main`.
-- Build: `./build.ps1` → `Auto Loop.exe`. Self-test: `& ".\Auto Loop.exe" --self-test <empty dir>` (77 checks, writes internal-tests.txt). Screenshots: `--preview <dir> <scale>`.
+- Build: `./build.ps1` → `Auto Loop.exe`. Self-test: `& ".\Auto Loop.exe" --self-test <empty dir>` (82 checks, writes internal-tests.txt). Screenshots: `--preview <dir> <scale>`.
 - Git is not on PowerShell's PATH: use `& "$env:ProgramFiles\Git\cmd\git.exe"`. Push and GitHub API auth come from the saved Git Credential Manager login (`git credential fill`).
 - Release: bump both Assembly versions in AutoLoop.cs; update CHANGELOG.md, TESTING.txt, README; regenerate screenshots; commit and push; build from the clean commit; self-test; ZIP = `Auto Loop.exe` + QUICKSTART.txt + LICENSE.txt; write SHA256SUMS.txt; publish via GitHub API (draft, upload the 3 assets, publish with make_latest); then download the assets, check sums and self-test the downloaded EXE.
 - Asset names: `Auto-Loop-<ver>-Portable.zip`, `Auto-Loop-<ver>.exe`, `SHA256SUMS.txt`.

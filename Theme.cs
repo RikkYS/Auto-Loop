@@ -48,15 +48,15 @@ namespace AutoLoop {
     internal class LoopLogo : Control {
         // The same logo artwork as the EXE icon and the GitHub banner (embedded Logo.png), drawn as a square tile.
         static Image artwork;
-        static Image Artwork{get{if(artwork==null){try{using(System.IO.Stream s=System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("AutoLoop.Logo"))if(s!=null)using(Image raw=Image.FromStream(s))artwork=new Bitmap(raw);}catch{artwork=null;}}return artwork;}}
+        internal static Image Artwork{get{if(artwork==null){try{using(System.IO.Stream s=System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("AutoLoop.Logo"))if(s!=null)using(Image raw=Image.FromStream(s))artwork=new Bitmap(raw);}catch(ArgumentException){artwork=null;}}return artwork;}}
         public LoopLogo(){DoubleBuffered=true;}
         protected override void OnPaint(PaintEventArgs e){
-            using(Brush background=new SolidBrush(Parent.BackColor))e.Graphics.FillRectangle(background,ClientRectangle);
+            using(Brush background=new SolidBrush(Parent==null?BackColor:Parent.BackColor))e.Graphics.FillRectangle(background,ClientRectangle);
             Image image=Artwork;
             if(image!=null){int side=Math.Min(Width,Height);e.Graphics.InterpolationMode=InterpolationMode.HighQualityBicubic;e.Graphics.PixelOffsetMode=PixelOffsetMode.HighQuality;e.Graphics.DrawImage(image,new Rectangle(0,(Height-side)/2,side,side));return;}
             DrawFallback(e);
         }
-        void DrawFallback(PaintEventArgs e){e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;using(Brush background=new SolidBrush(Parent.BackColor))e.Graphics.FillRectangle(background,ClientRectangle);e.Graphics.ScaleTransform(Width/40f,Height/34f);using(Pen p=new Pen(Color.FromArgb(103,241,173),5)){p.StartCap=LineCap.Round;p.EndCap=LineCap.Round;using(GraphicsPath path=new GraphicsPath()){path.AddBezier(31,10,17,4,18,29,8,25);path.AddBezier(8,25,-4,20,6,4,15,13);path.AddBezier(15,13,23,19,23,30,32,25);path.AddBezier(32,25,39,21,38,15,35,12);e.Graphics.DrawPath(p,path);}}using(Brush b=new SolidBrush(Color.FromArgb(103,241,173)))e.Graphics.FillPolygon(b,new PointF[]{new PointF(29,3),new PointF(38,10),new PointF(28,15)});}
+        void DrawFallback(PaintEventArgs e){e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;e.Graphics.ScaleTransform(Width/40f,Height/34f);using(Pen p=new Pen(Color.FromArgb(103,241,173),5)){p.StartCap=LineCap.Round;p.EndCap=LineCap.Round;using(GraphicsPath path=new GraphicsPath()){path.AddBezier(31,10,17,4,18,29,8,25);path.AddBezier(8,25,-4,20,6,4,15,13);path.AddBezier(15,13,23,19,23,30,32,25);path.AddBezier(32,25,39,21,38,15,35,12);e.Graphics.DrawPath(p,path);}}using(Brush b=new SolidBrush(Color.FromArgb(103,241,173)))e.Graphics.FillPolygon(b,new PointF[]{new PointF(29,3),new PointF(38,10),new PointF(28,15)});}
     }
     internal class StatusLabel : Label {
         protected override void OnPaint(PaintEventArgs e){e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;Color dot=Text.StartsWith("Paused")?Color.FromArgb(245,203,112):Color.FromArgb(68,220,143);int size=UiScale.Px(8),textLeft=UiScale.Px(17);using(Brush b=new SolidBrush(dot))e.Graphics.FillEllipse(b,1,Height/2-size/2,size,size);TextRenderer.DrawText(e.Graphics,Text,Font,new Rectangle(textLeft,0,Math.Max(0,Width-textLeft),Height),ForeColor,TextFormatFlags.Left|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);}
