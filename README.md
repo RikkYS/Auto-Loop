@@ -50,7 +50,7 @@ Needs 64-bit Windows 10 or 11 with .NET Framework 4.x, which is already installe
 > Get-FileHash ".\Auto-Loop-0.7.3-Portable.zip" -Algorithm SHA256
 > ```
 
-**Virus scan:** [VirusTotal results for Auto Loop 0.7.2](https://www.virustotal.com/gui/file/9e5f07acc6c8cb455502b62976ba6731887e1e2d907e5f418c2ac719295b39b7). 2 of 69 scanners (Bkav Pro and SecureAge) flag it with generic detections that unsigned tools which send clicks and keys often get. Microsoft Defender, Kaspersky, ESET, Bitdefender, Malwarebytes and the others report it clean, and the source code is here for anyone to check.
+**Virus scan:** [VirusTotal results for Auto Loop 0.7.3](https://www.virustotal.com/gui/file/cf82e1ee458fe1b878e6a24b2c31a6fc8988852e3d656246266a2319b40e6d4d). 2 of 70 scanners (Bkav Pro and SecureAge) flag it with generic detections that unsigned tools which send clicks and keys often get. Microsoft Defender, Kaspersky, ESET, Bitdefender, Malwarebytes and the others report it clean, and the source code is here for anyone to check.
 
 ## Quick start: five clicks in Notepad
 

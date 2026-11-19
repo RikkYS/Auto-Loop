@@ -31,7 +31,7 @@
 - The user posts and submits to sites and uploads the social preview banner themselves; prepare the material, don't post.
 
 ## Status
-- Current release: v0.7.3 (latest, 2026-11-19): engine hardening, version line + Check for updates link in Settings (Settings window 490×478). VirusTotal link in README is still the 0.7.2 scan (2/69 generic flags); the user rescans 0.7.3.
+- Current release: v0.7.3 (latest, 2026-11-19): engine hardening, version line + Check for updates link in Settings (Settings window 490×478). VirusTotal: 2/70 generic flags (Bkav Pro, SecureAge), linked in README and release notes.
 - Phase 1 (page polish: demo, pitch, VirusTotal, banner): done.
 - Phase 2 (get found), drafts in `promo/phase2/`:
   - [ ] AlternativeTo listing → `promo/phase2/alternativeto.md`
